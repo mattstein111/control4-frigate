@@ -1,0 +1,216 @@
+<devicedata>
+  <copyright>Copyright 2026. All rights reserved.</copyright>
+  <creator>control4-frigate</creator>
+  <manufacturer>Frigate NVR</manufacturer>
+  <name>Frigate NVR</name>
+  <model>Frigate NVR Controller</model>
+  <created>2026-03-31</created>
+  <modified>2026-04-01</modified>
+  <version>19</version>
+
+  <capabilities>
+    <modes>SNAPSHOT</modes>
+    <has_pan>False</has_pan>
+    <has_pan_scan>False</has_pan_scan>
+    <has_tilt>False</has_tilt>
+    <has_tilt_scan>False</has_tilt_scan>
+    <has_home>False</has_home>
+    <has_zoom>False</has_zoom>
+    <number_presets>0</number_presets>
+    <default_http_port>5000</default_http_port>
+    <default_rtsp_port>554</default_rtsp_port>
+    <default_authentication_required>False</default_authentication_required>
+    <default_authentication_type>NONE</default_authentication_type>
+    <default_username></default_username>
+    <default_password></default_password>
+    <address_readonly>False</address_readonly>
+    <http_port_readonly>False</http_port_readonly>
+    <use_http_for_h264>False</use_http_for_h264>
+  </capabilities>
+
+  <small>devices_sm\camera_sm.gif</small>
+  <large>devices_lg\camera_lg.gif</large>
+  <control>lua_gen</control>
+  <controlmethod>ip</controlmethod>
+  <driver>DriverWorks</driver>
+
+  <proxies qty="1">
+    <proxy proxybindingid="5001" name="Frigate NVR">camera</proxy>
+  </proxies>
+
+  <connections>
+    <connection>
+      <id>5001</id>
+      <facing>6</facing>
+      <connectionname>Frigate NVR</connectionname>
+      <type>2</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>False</linelevel>
+      <hidden>True</hidden>
+      <classes>
+        <class>
+          <classname>CAMERA</classname>
+        </class>
+      </classes>
+    </connection>
+  </connections>
+
+  <config>
+    <properties>
+      <property>
+        <name>Driver Version</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Frigate Host</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Frigate Port</name>
+        <type>STRING</type>
+        <default>5000</default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Frigate Username</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Frigate Password</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>MQTT Broker</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>MQTT Port</name>
+        <type>STRING</type>
+        <default>1883</default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>MQTT Username</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>MQTT Password</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Use Sub Streams</name>
+        <type>LIST</type>
+        <items>
+          <item>Yes</item>
+          <item>No</item>
+        </items>
+        <default>Yes</default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Frigate Status</name>
+        <type>STRING</type>
+        <default>Not Connected</default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>MQTT Status</name>
+        <type>STRING</type>
+        <default>Not Connected</default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Cameras in Frigate</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Cameras in C4</name>
+        <type>STRING</type>
+        <default>0</default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Managed Cameras</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Log Level</name>
+        <type>LIST</type>
+        <default>2 - Warning</default>
+        <readonly>false</readonly>
+        <items>
+          <item>0 - Fatal</item>
+          <item>1 - Error</item>
+          <item>2 - Warning</item>
+          <item>3 - Info</item>
+          <item>4 - Debug</item>
+          <item>5 - Trace</item>
+        </items>
+      </property>
+      <property>
+        <name>Log Mode</name>
+        <type>LIST</type>
+        <default>Off</default>
+        <readonly>false</readonly>
+        <items>
+          <item>Off</item>
+          <item>Print</item>
+          <item>Log</item>
+          <item>Print and Log</item>
+        </items>
+      </property>
+    </properties>
+    <actions>
+      <action>
+        <name>Create Cameras</name>
+        <command>CreateCameras</command>
+      </action>
+      <action>
+        <name>Synchronize Cameras with Frigate</name>
+        <command>RenameCameras</command>
+      </action>
+      <action>
+        <name>Reconnect MQTT</name>
+        <command>ReconnectMQTT</command>
+      </action>
+      <action>
+        <name>Remove All Cameras</name>
+        <command>RemoveAllCameras</command>
+      </action>
+      <action>
+        <name>Check Frigate Status</name>
+        <command>CheckStatus</command>
+      </action>
+    </actions>
+    <documentation file="www/documentation.html"></documentation>
+    <script file="driver.lua"></script>
+    <power_management_method>AlwaysOn</power_management_method>
+    <power_command_delay>0</power_command_delay>
+    <power_delay>0</power_delay>
+    <power_command_needed>False</power_command_needed>
+  </config>
+
+  <composer_categories>
+    <category>Camera</category>
+  </composer_categories>
+</devicedata>

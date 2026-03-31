@@ -1,0 +1,179 @@
+<devicedata>
+  <copyright>Copyright 2026. All rights reserved.</copyright>
+  <creator>control4-frigate</creator>
+  <manufacturer>Frigate NVR</manufacturer>
+  <name>Frigate Camera</name>
+  <model>Frigate Camera (go2rtc)</model>
+  <created>2026-03-31</created>
+  <modified>2026-04-01</modified>
+  <version>21</version>
+
+  <capabilities>
+    <modes>SNAPSHOT,MJPEG,H264</modes>
+    <has_pan>False</has_pan>
+    <has_pan_scan>False</has_pan_scan>
+    <has_tilt>False</has_tilt>
+    <has_tilt_scan>False</has_tilt_scan>
+    <has_home>False</has_home>
+    <has_zoom>False</has_zoom>
+    <number_presets>0</number_presets>
+    <default_http_port>5000</default_http_port>
+    <default_rtsp_port>8554</default_rtsp_port>
+    <default_authentication_required>False</default_authentication_required>
+    <default_authentication_type>NONE</default_authentication_type>
+    <default_username></default_username>
+    <default_password></default_password>
+    <address_readonly>False</address_readonly>
+    <http_port_readonly>False</http_port_readonly>
+    <use_http_for_h264>False</use_http_for_h264>
+    <requires_dynamic_stream_urls>True</requires_dynamic_stream_urls>
+    <dynamic_urls_use_type>MULTIPLE</dynamic_urls_use_type>
+  </capabilities>
+
+  <small>devices_sm\camera_sm.gif</small>
+  <large>devices_lg\camera_lg.gif</large>
+  <control>lua_gen</control>
+  <controlmethod>ip</controlmethod>
+  <driver>DriverWorks</driver>
+
+  <proxies qty="1">
+    <proxy proxybindingid="5001" name="Frigate Camera">camera</proxy>
+  </proxies>
+
+  <connections>
+    <connection>
+      <id>5001</id>
+      <facing>6</facing>
+      <connectionname>Camera</connectionname>
+      <type>2</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>False</linelevel>
+      <hidden>True</hidden>
+      <classes>
+        <class>
+          <classname>CAMERA</classname>
+        </class>
+      </classes>
+    </connection>
+  </connections>
+
+  <config>
+    <properties>
+      <property>
+        <name>Driver Version</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Frigate Host</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Camera Name</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Use Sub Stream</name>
+        <type>LIST</type>
+        <items>
+          <item>Yes</item>
+          <item>No</item>
+        </items>
+        <default>Yes</default>
+        <readonly>false</readonly>
+      </property>
+      <property>
+        <name>Camera Status</name>
+        <type>STRING</type>
+        <default>Not Configured</default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Last Event</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+    </properties>
+    <documentation file="www/documentation.html"></documentation>
+    <script file="driver.lua"></script>
+    <power_management_method>AlwaysOn</power_management_method>
+    <power_command_delay>0</power_command_delay>
+    <power_delay>0</power_delay>
+    <power_command_needed>False</power_command_needed>
+  </config>
+
+  <composer_categories>
+    <category>Camera</category>
+  </composer_categories>
+
+  <events>
+    <event>
+      <name>Person Detected</name>
+      <description>A person was detected by Frigate on this camera.</description>
+    </event>
+    <event>
+      <name>Person Left</name>
+      <description>All persons have left the camera's field of view.</description>
+    </event>
+    <event>
+      <name>Car Detected</name>
+      <description>A car was detected by Frigate on this camera.</description>
+    </event>
+    <event>
+      <name>Car Left</name>
+      <description>All cars have left the camera's field of view.</description>
+    </event>
+    <event>
+      <name>Dog Detected</name>
+      <description>A dog was detected by Frigate on this camera.</description>
+    </event>
+    <event>
+      <name>Cat Detected</name>
+      <description>A cat was detected by Frigate on this camera.</description>
+    </event>
+    <event>
+      <name>Object Detected</name>
+      <description>Any object was detected (generic catch-all).</description>
+    </event>
+    <event>
+      <name>Object Left</name>
+      <description>An object type count dropped to zero.</description>
+    </event>
+    <event>
+      <name>Motion Started</name>
+      <description>Motion was detected on this camera.</description>
+    </event>
+    <event>
+      <name>Motion Stopped</name>
+      <description>Motion has stopped on this camera.</description>
+    </event>
+    <event>
+      <name>Zone Entered</name>
+      <description>An object entered a detection zone.</description>
+    </event>
+    <event>
+      <name>Zone Exited</name>
+      <description>All objects of a type left a detection zone.</description>
+    </event>
+    <event>
+      <name>Loitering Detected</name>
+      <description>An object has been loitering in a zone beyond the configured threshold.</description>
+    </event>
+    <event>
+      <name>Camera Online</name>
+      <description>Camera has come online / is reachable.</description>
+    </event>
+    <event>
+      <name>Camera Offline</name>
+      <description>Camera has gone offline / is unreachable.</description>
+    </event>
+  </events>
+</devicedata>

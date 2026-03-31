@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Frigate Camera Driver</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+    h1 { color: #1a5276; }
+    h2 { color: #2980b9; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+    h3 { color: #2c3e50; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #2980b9; color: white; }
+    code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    .note { background-color: #fef9e7; border-left: 4px solid #f1c40f; padding: 10px; margin: 10px 0; }
+    .important { background-color: #fdedec; border-left: 4px solid #e74c3c; padding: 10px; margin: 10px 0; }
+    .success { background-color: #eafaf1; border-left: 4px solid #2ecc71; padding: 10px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Frigate Camera Driver for Control4</h1>
+  <p>Displays a Frigate NVR camera in Control4 navigators with full detection event support.</p>
+
+  <h2>Setup</h2>
+  <p>This driver can be added manually or auto-created by the <strong>Frigate NVR</strong> parent driver.</p>
+
+  <h3>Automatic (recommended)</h3>
+  <ol>
+    <li>Add the <strong>Frigate NVR</strong> driver first</li>
+    <li>Run <strong>Discover Cameras</strong> &mdash; this driver is created automatically for each camera</li>
+    <li>Move the camera to the appropriate room</li>
+    <li>Optionally run <strong>Rename Cameras to Frigate Names</strong> from the NVR driver</li>
+  </ol>
+
+  <h3>Manual</h3>
+  <ol>
+    <li>Add this driver in Composer Pro</li>
+    <li>Set <strong>Frigate Host</strong> to your Frigate server IP address</li>
+    <li>Set <strong>Camera Name</strong> to the exact Frigate camera name (e.g. <code>front_door</code>)</li>
+    <li>Set <strong>Use Sub Stream</strong> to <code>Yes</code> for H.264 720p (recommended) or <code>No</code> for main stream</li>
+  </ol>
+
+  <h2>Stream Types</h2>
+  <table>
+    <tr><th>Type</th><th>Port</th><th>Used By</th><th>URL Pattern</th></tr>
+    <tr>
+      <td>MJPEG</td><td>1984</td><td>Touchscreens, On-Screen, PC</td>
+      <td><code>http://host:1984/api/stream.mjpeg?src=camera_sub</code></td>
+    </tr>
+    <tr>
+      <td>RTSP H.264</td><td>8554</td><td>Mobile Apps</td>
+      <td><code>rtsp://host:8554/camera_sub</code></td>
+    </tr>
+    <tr>
+      <td>Snapshot</td><td>5000</td><td>Thumbnails</td>
+      <td><code>http://host:5000/api/camera/latest.jpg</code></td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <strong>Sub-streams recommended:</strong> Control4 navigators cap at 720p and H.264 sub-streams
+    avoid transcoding. Main streams use H.265 which Control4 cannot decode.
+  </div>
+
+  <h2>Detection Events</h2>
+  <p>When paired with the <strong>Frigate NVR</strong> driver, this camera receives real-time detection
+  events via MQTT. Events appear in the C4 app history and are available for Composer programming.</p>
+
+  <h3>Programmable Events</h3>
+  <table>
+    <tr><th>Event</th><th>Trigger</th></tr>
+    <tr><td>Person Detected / Person Left</td><td>Person appears or all persons leave</td></tr>
+    <tr><td>Car Detected / Car Left</td><td>Car appears or all cars leave</td></tr>
+    <tr><td>Dog Detected</td><td>Dog appears</td></tr>
+    <tr><td>Cat Detected</td><td>Cat appears</td></tr>
+    <tr><td>Object Detected / Object Left</td><td>Any object (generic catch-all)</td></tr>
+    <tr><td>Motion Started / Motion Stopped</td><td>Motion detected or stops</td></tr>
+    <tr><td>Zone Entered / Zone Exited</td><td>Object enters or leaves a detection zone</td></tr>
+    <tr><td>Loitering Detected</td><td>Object loiters beyond configured threshold</td></tr>
+    <tr><td>Camera Online / Camera Offline</td><td>Camera reachability changes</td></tr>
+  </table>
+
+  <h3>Composer Variables (Conditionals)</h3>
+  <table>
+    <tr><th>Variable</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>PERSON_DETECTED</code></td><td>Boolean</td><td>Any person currently detected</td></tr>
+    <tr><td><code>CAR_DETECTED</code></td><td>Boolean</td><td>Any car currently detected</td></tr>
+    <tr><td><code>DOG_DETECTED</code></td><td>Boolean</td><td>Any dog currently detected</td></tr>
+    <tr><td><code>CAT_DETECTED</code></td><td>Boolean</td><td>Any cat currently detected</td></tr>
+    <tr><td><code>MOTION_ACTIVE</code></td><td>Boolean</td><td>Motion currently active</td></tr>
+    <tr><td><code>CAMERA_ONLINE</code></td><td>Boolean</td><td>Camera reachable</td></tr>
+    <tr><td><code>PERSON_COUNT</code></td><td>Number</td><td>Current person count</td></tr>
+    <tr><td><code>CAR_COUNT</code></td><td>Number</td><td>Current car count</td></tr>
+    <tr><td><code>LAST_OBJECT_TYPE</code></td><td>String</td><td>Last detected object type</td></tr>
+    <tr><td><code>LAST_ZONE</code></td><td>String</td><td>Last zone with activity</td></tr>
+    <tr><td><code>LAST_DETECTION_TIME</code></td><td>String</td><td>Timestamp of last detection</td></tr>
+  </table>
+
+  <h3>History</h3>
+  <p>All detection events are recorded in the device history, visible in the C4 app timeline and
+  on touchscreens. Loitering events are recorded with Warning severity; all others are Info.</p>
+
+  <h2>Requirements</h2>
+  <ul>
+    <li>Control4 OS 3.2.0 or newer</li>
+    <li>Frigate NVR 0.14+ with go2rtc enabled</li>
+    <li>go2rtc RTSP restream on port 8554, HTTP API on port 1984</li>
+    <li>Frigate REST API on port 5000</li>
+    <li>For detection events: Frigate NVR parent driver + MQTT broker</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <table>
+    <tr><th>Problem</th><th>Solution</th></tr>
+    <tr>
+      <td>No video on touchscreen</td>
+      <td>Verify MJPEG URL in browser: <code>http://host:1984/api/stream.mjpeg?src=camera_sub</code></td>
+    </tr>
+    <tr>
+      <td>No video in mobile app</td>
+      <td>RTSP may 404 if go2rtc has no active producer. MJPEG should still work.</td>
+    </tr>
+    <tr>
+      <td>No snapshot</td>
+      <td>Verify: <code>http://host:5000/api/camera/latest.jpg</code></td>
+    </tr>
+    <tr>
+      <td>No detection events</td>
+      <td>Ensure Frigate NVR driver is added, MQTT Status shows "Connected", and MQTT broker is running</td>
+    </tr>
+    <tr>
+      <td>Events not in history</td>
+      <td>Check that the NVR driver's Managed Cameras property lists this camera's name</td>
+    </tr>
+  </table>
+
+  <p><em>Version 2 &mdash; Frigate Camera Driver for Control4</em></p>
+</body>
+</html>

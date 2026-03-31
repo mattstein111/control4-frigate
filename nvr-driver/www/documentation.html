@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Frigate NVR Driver</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+    h1 { color: #1a5276; }
+    h2 { color: #2980b9; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+    h3 { color: #2c3e50; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #2980b9; color: white; }
+    code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    .note { background-color: #fef9e7; border-left: 4px solid #f1c40f; padding: 10px; margin: 10px 0; }
+    .important { background-color: #fdedec; border-left: 4px solid #e74c3c; padding: 10px; margin: 10px 0; }
+    .success { background-color: #eafaf1; border-left: 4px solid #2ecc71; padding: 10px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Frigate NVR Controller for Control4</h1>
+  <p>Auto-discovers cameras from Frigate NVR, creates Control4 camera drivers, and delivers
+  real-time detection events via MQTT.</p>
+
+  <h2>Quick Start</h2>
+  <ol>
+    <li>Ensure <code>frigate-camera.c4z</code> is loaded on the controller (System Design &rarr; Manage Drivers)</li>
+    <li>Add the <strong>Frigate NVR</strong> driver to your project</li>
+    <li>Set <strong>Frigate Host</strong> and <strong>MQTT Broker</strong> addresses</li>
+    <li>Verify <strong>Frigate Status</strong> shows "Online" and <strong>MQTT Status</strong> shows "Connected"</li>
+    <li>Run the <strong>Discover Cameras</strong> action &mdash; camera drivers appear automatically</li>
+    <li>Move each camera driver to the appropriate room</li>
+    <li>Optionally run <strong>Rename Cameras to Frigate Names</strong> for clean display names</li>
+  </ol>
+
+  <div class="success">
+    <strong>That's it!</strong> Detection events, history, and Composer variables start flowing
+    automatically. Each camera records events to its own history timeline.
+  </div>
+
+  <h2>Actions</h2>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr>
+      <td><strong>Discover Cameras</strong></td>
+      <td>Queries Frigate API for all cameras. Adds a camera driver for each new camera.
+      Existing cameras are updated with current host/sub-stream settings. Safe to run multiple times.</td>
+    </tr>
+    <tr>
+      <td><strong>Rename Cameras to Frigate Names</strong></td>
+      <td>Renames all managed camera drivers to match Frigate names (title-cased, underscores to spaces).
+      e.g. <code>driveway_to_gate</code> &rarr; <code>Driveway To Gate</code>. Refreshes the Composer project tree.</td>
+    </tr>
+    <tr>
+      <td><strong>Reconnect MQTT</strong></td>
+      <td>Disconnects and reconnects the MQTT client. Use if events stop flowing.</td>
+    </tr>
+    <tr>
+      <td><strong>Check Frigate Status</strong></td>
+      <td>Tests Frigate API connectivity and reports the Frigate version.</td>
+    </tr>
+    <tr>
+      <td><strong>Remove All Cameras</strong></td>
+      <td>Clears the NVR driver's camera tracking. Camera drivers must be removed manually in Composer.</td>
+    </tr>
+  </table>
+
+  <h2>Properties</h2>
+  <table>
+    <tr><th>Property</th><th>Default</th><th>Description</th></tr>
+    <tr><td>Frigate Host</td><td><em>(required)</em></td><td>Frigate server IP address</td></tr>
+    <tr><td>Frigate Port</td><td><code>5000</code></td><td>Frigate REST API port</td></tr>
+    <tr><td>Frigate Username</td><td><em>(optional)</em></td><td>Username for Frigate HTTP auth (leave blank if auth is disabled)</td></tr>
+    <tr><td>Frigate Password</td><td><em>(optional)</em></td><td>Password for Frigate HTTP auth</td></tr>
+    <tr><td>MQTT Broker</td><td><em>(required)</em></td><td>MQTT broker IP address</td></tr>
+    <tr><td>MQTT Port</td><td><code>1883</code></td><td>MQTT broker port</td></tr>
+    <tr><td>MQTT Username</td><td><em>(optional)</em></td><td>Username for MQTT broker auth (leave blank if no auth)</td></tr>
+    <tr><td>MQTT Password</td><td><em>(optional)</em></td><td>Password for MQTT broker auth</td></tr>
+    <tr><td>Use Sub Streams</td><td>Yes</td><td>H.264 720p sub-streams (recommended for Control4)</td></tr>
+    <tr><td>Frigate Status</td><td><em>auto</em></td><td>Frigate API connection status</td></tr>
+    <tr><td>MQTT Status</td><td><em>auto</em></td><td>MQTT broker connection status</td></tr>
+    <tr><td>Camera Count</td><td><em>auto</em></td><td>Number of managed camera drivers</td></tr>
+    <tr><td>Managed Cameras</td><td><em>auto</em></td><td>Comma-separated list of managed camera names</td></tr>
+  </table>
+
+  <h2>MQTT Event Routing</h2>
+  <p>The NVR driver subscribes to Frigate's MQTT topics and routes events to the appropriate camera driver.</p>
+
+  <h3>Subscribed Topics</h3>
+  <table>
+    <tr><th>Topic</th><th>Purpose</th></tr>
+    <tr><td><code>frigate/available</code></td><td>Frigate online/offline &rarr; all cameras</td></tr>
+    <tr><td><code>frigate/+/person</code></td><td>Person count per camera</td></tr>
+    <tr><td><code>frigate/+/car</code></td><td>Car count per camera</td></tr>
+    <tr><td><code>frigate/+/dog</code></td><td>Dog count per camera</td></tr>
+    <tr><td><code>frigate/+/cat</code></td><td>Cat count per camera</td></tr>
+    <tr><td><code>frigate/+/motion</code></td><td>Motion ON/OFF per camera</td></tr>
+    <tr><td><code>frigate/+/+/+</code></td><td>Zone events (camera/zone/object)</td></tr>
+    <tr><td><code>frigate/events</code></td><td>Full event JSON (for loitering detection)</td></tr>
+  </table>
+
+  <h3>Event Flow</h3>
+  <pre>
+Camera &rarr; Frigate detects object &rarr; MQTT broker
+    &darr;
+NVR Driver (parses topic, determines camera + event type)
+    &darr;
+Camera Driver (fires C4 events, updates variables, records history)
+    &darr;
+Composer programming triggers (lights, locks, scenes, notifications)
+  </pre>
+
+  <h2>How It Works</h2>
+  <ul>
+    <li>Each camera is an <strong>independent driver instance</strong> &mdash; placeable in any room</li>
+    <li>The NVR driver tracks cameras persistently (survives reboots)</li>
+    <li>On startup, stale tracking entries are cleaned up automatically</li>
+    <li>MQTT auto-reconnects on disconnect (30-second interval)</li>
+    <li>Camera drivers work standalone for streaming even without the NVR driver</li>
+  </ul>
+
+  <h2>Composer Programming Examples</h2>
+
+  <h3>Turn on porch light when person detected</h3>
+  <p>Event: <strong>Person Detected</strong> on Front Door camera &rarr; Action: Turn on Porch Light</p>
+
+  <h3>Send notification when car loiters</h3>
+  <p>Event: <strong>Loitering Detected</strong> on Thelma camera &rarr; Action: Send Push Notification</p>
+
+  <h3>Conditional: only when person is present</h3>
+  <p>If <code>PERSON_DETECTED</code> is True on Driveway camera &rarr; ...</p>
+
+  <h3>Conditional: check object count</h3>
+  <p>If <code>PERSON_COUNT</code> > 2 on Front Yard camera &rarr; ...</p>
+
+  <h2>Requirements</h2>
+  <ul>
+    <li>Control4 OS 3.2.0 or newer (required for <code>C4:AddDevice</code> API)</li>
+    <li>Frigate NVR 0.14+ with go2rtc and MQTT enabled</li>
+    <li>MQTT broker accessible from the Control4 controller</li>
+    <li><code>frigate-camera.c4z</code> loaded on the controller before running Discover</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <table>
+    <tr><th>Problem</th><th>Solution</th></tr>
+    <tr>
+      <td>Frigate Status: Offline</td>
+      <td>Check network connectivity. Verify Frigate API at <code>http://host:5000/api/version</code></td>
+    </tr>
+    <tr>
+      <td>MQTT Status: Disconnected</td>
+      <td>Verify broker is running. Check IP and port. Try <strong>Reconnect MQTT</strong> action.</td>
+    </tr>
+    <tr>
+      <td>Discover finds 0 cameras</td>
+      <td>Verify <code>http://host:5000/api/config</code> returns camera data in a browser</td>
+    </tr>
+    <tr>
+      <td>Cameras not receiving events</td>
+      <td>Check MQTT Status is "Connected". Verify Managed Cameras lists the camera name.</td>
+    </tr>
+    <tr>
+      <td>Camera added but no video</td>
+      <td>Camera may not be configured yet. Check its Camera Name and Frigate Host properties.</td>
+    </tr>
+  </table>
+
+  <div class="important">
+    <strong>Prerequisite:</strong> The <code>frigate-camera.c4z</code> driver must be loaded on the
+    controller before running Discover. Add it via System Design &rarr; Manage Drivers.
+  </div>
+
+  <p><em>Version 2 &mdash; Frigate NVR Controller for Control4</em></p>
+</body>
+</html>
