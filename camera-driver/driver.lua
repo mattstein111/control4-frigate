@@ -102,10 +102,28 @@ local function initVariables()
     VAR.PERSON_COUNT       = C4:AddVariable("PERSON_COUNT", "0", "NUMBER")
     VAR.CAR_COUNT          = C4:AddVariable("CAR_COUNT", "0", "NUMBER")
 
+    -- State variables
+    VAR.DETECTION_ENABLED  = C4:AddVariable("DETECTION_ENABLED", "true", "BOOL")
+    VAR.RECORDING_ENABLED  = C4:AddVariable("RECORDING_ENABLED", "true", "BOOL")
+    VAR.LOITERING_DETECTED = C4:AddVariable("LOITERING_DETECTED", "false", "BOOL")
+
+    -- Audio variables
+    VAR.AUDIO_DETECTED     = C4:AddVariable("AUDIO_DETECTED", "false", "BOOL")
+    VAR.AUDIO_SPEECH       = C4:AddVariable("AUDIO_SPEECH", "false", "BOOL")
+    VAR.AUDIO_BARK         = C4:AddVariable("AUDIO_BARK", "false", "BOOL")
+    VAR.AUDIO_SCREAM       = C4:AddVariable("AUDIO_SCREAM", "false", "BOOL")
+    VAR.AUDIO_YELL         = C4:AddVariable("AUDIO_YELL", "false", "BOOL")
+    VAR.AUDIO_FIRE_ALARM   = C4:AddVariable("AUDIO_FIRE_ALARM", "false", "BOOL")
+    VAR.AUDIO_GLASS_BREAKING = C4:AddVariable("AUDIO_GLASS_BREAKING", "false", "BOOL")
+    VAR.AUDIO_SIREN        = C4:AddVariable("AUDIO_SIREN", "false", "BOOL")
+    VAR.AUDIO_CAR_HORN     = C4:AddVariable("AUDIO_CAR_HORN", "false", "BOOL")
+    VAR.AUDIO_MUSIC        = C4:AddVariable("AUDIO_MUSIC", "false", "BOOL")
+
     -- String variables
     VAR.LAST_OBJECT_TYPE   = C4:AddVariable("LAST_OBJECT_TYPE", "", "STRING")
     VAR.LAST_ZONE          = C4:AddVariable("LAST_ZONE", "", "STRING")
     VAR.LAST_DETECTION_TIME = C4:AddVariable("LAST_DETECTION_TIME", "", "STRING")
+    VAR.LAST_AUDIO_TYPE    = C4:AddVariable("LAST_AUDIO_TYPE", "", "STRING")
     VAR.CAMERA_NAME        = C4:AddVariable("CAMERA_NAME", "", "STRING")
 end
 
@@ -261,6 +279,7 @@ local function handleLoitering(tParams)
     setVar(VAR.LAST_ZONE, zone)
     setVar(VAR.LAST_OBJECT_TYPE, objType)
     setVar(VAR.LAST_DETECTION_TIME, timestamp())
+    setVar(VAR.LOITERING_DETECTED, "true")
 
     fireEvent("Loitering Detected")
     recordHistory(friendly .. " loitering in zone: " .. friendlyZ, "Warning")
@@ -309,6 +328,24 @@ local function handleAudio(tParams)
     local ts = timestamp()
 
     setVar(VAR.LAST_DETECTION_TIME, ts)
+    setVar(VAR.LAST_AUDIO_TYPE, audioType)
+    setVar(VAR.AUDIO_DETECTED, "true")
+
+    -- Set specific audio variable
+    local AUDIO_VARS = {
+        speech         = VAR.AUDIO_SPEECH,
+        bark           = VAR.AUDIO_BARK,
+        scream         = VAR.AUDIO_SCREAM,
+        yell           = VAR.AUDIO_YELL,
+        fire_alarm     = VAR.AUDIO_FIRE_ALARM,
+        glass_breaking = VAR.AUDIO_GLASS_BREAKING,
+        siren          = VAR.AUDIO_SIREN,
+        car_horn       = VAR.AUDIO_CAR_HORN,
+        music          = VAR.AUDIO_MUSIC,
+    }
+    if AUDIO_VARS[audioType] then
+        setVar(AUDIO_VARS[audioType], "true")
+    end
 
     local eventName = AUDIO_EVENTS[audioType]
     if eventName then
@@ -330,6 +367,7 @@ local function handleStateChange(tParams)
     local enabled = tParams.enabled
 
     if setting == "detect" then
+        setVar(VAR.DETECTION_ENABLED, enabled and "true" or "false")
         if enabled then
             fireEvent("Detection Enabled")
             recordHistory("Detection enabled", "Info")
@@ -338,6 +376,7 @@ local function handleStateChange(tParams)
             recordHistory("Detection disabled", "Warning")
         end
     elseif setting == "recordings" then
+        setVar(VAR.RECORDING_ENABLED, enabled and "true" or "false")
         if enabled then
             fireEvent("Recording Enabled")
             recordHistory("Recording enabled", "Info")

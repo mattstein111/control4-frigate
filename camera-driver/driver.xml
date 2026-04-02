@@ -6,7 +6,7 @@
   <model>Frigate Camera (go2rtc)</model>
   <created>2026-03-31</created>
   <modified>2026-04-02</modified>
-  <version>25</version>
+  <version>26</version>
 
   <capabilities>
     <modes>SNAPSHOT,MJPEG,H264</modes>
