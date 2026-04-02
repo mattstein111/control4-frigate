@@ -17,6 +17,11 @@
     frigate/+/+/+              — zone events (camera/zone/object = count)
     frigate/events             — full event JSON (for new/end event types)
 
+  Orphan adoption:
+    On init and via "Adopt Existing Cameras" action, finds frigate-camera
+    devices not tracked by this NVR. Sends IDENTIFY_CAMERA; cameras respond
+    with ADOPT_RESPONSE containing their camera_name and device_id.
+
   Persistent storage (survives reboots):
     "managed_cameras" table: { camera_name = { deviceId, proxyId } }
 ]]
@@ -35,7 +40,7 @@ local PROP_SUB         = "Use Sub Streams"
 local PROP_STATUS        = "Frigate Status"
 local PROP_MQTT_STATUS   = "MQTT Status"
 local PROP_FRIGATE_COUNT = "Cameras in Frigate"
-local PROP_C4_COUNT      = "Cameras in C4"
+local PROP_C4_COUNT      = "Cameras in Control4"
 local PROP_MANAGED       = "Managed Cameras"
 local PROP_LOG_LEVEL   = "Log Level"
 local PROP_LOG_MODE    = "Log Mode"
@@ -210,7 +215,10 @@ local function subscribeFrigateTopics()
         "frigate/+/cat",
         "frigate/+/motion",
         "frigate/+/+/+",
-        "frigate/events"
+        "frigate/events",
+        "frigate/+/audio/+",
+        "frigate/+/detect/state",
+        "frigate/+/recordings/state"
     }
 
     for _, topic in ipairs(topics) do
@@ -288,6 +296,29 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     end
 
     local camName = segments[2]
+
+    -- frigate/<camera>/detect/state or frigate/<camera>/recordings/state
+    if #segments == 4 and segments[4] == "state" then
+        local setting = segments[3]
+        if setting == "detect" or setting == "recordings" then
+            local enabled = (payload == "ON")
+            sendToCamera(camName, "FRIGATE_STATE", { setting = setting, enabled = enabled })
+            log(LOG_DEBUG, setting .. " " .. (enabled and "ON" or "OFF") .. " on " .. camName)
+        end
+        return
+    end
+
+    -- frigate/<camera>/audio/<type> (audio detection events)
+    if #segments == 4 and segments[3] == "audio" and segments[4] ~= "state" then
+        -- Audio detection payload is a count or score; > 0 means detected
+        local val = tonumber(payload) or 0
+        if val > 0 then
+            local audioType = segments[4]
+            sendToCamera(camName, "FRIGATE_AUDIO", { audio_type = audioType })
+            log(LOG_DEBUG, "Audio: " .. audioType .. " on " .. camName)
+        end
+        return
+    end
 
     -- frigate/<camera>/motion
     if #segments == 3 and segments[3] == "motion" then
@@ -507,6 +538,40 @@ local function fetchCameras(callback)
     end)
 end
 
+--- Auto-populate MQTT broker from Frigate's config if not already set.
+local function autoPopulateMQTT()
+    local mqttHost = Properties[PROP_MQTT_HOST] or ""
+    if mqttHost ~= "" then return end  -- already configured
+
+    local base = apiBaseURL()
+    if not base then return end
+
+    local url = base .. "/api/config"
+    C4:urlGet(url, apiHeaders(), false, function(ticketId, strData, responseCode, tHeaders, strError)
+        if responseCode ~= 200 or not strData then return end
+
+        local host = jsonString(strData, "host")
+        local port = jsonNumber(strData, "port")
+
+        -- The "host" key appears in multiple sections — find the one under "mqtt"
+        local mqttBlock = strData:match('"mqtt"%s*:%s*({.-})')
+        if mqttBlock then
+            host = jsonString(mqttBlock, "host")
+            port = jsonNumber(mqttBlock, "port")
+        end
+
+        if host and host ~= "" then
+            C4:UpdateProperty(PROP_MQTT_HOST, host)
+            log(LOG_INFO, "Auto-populated MQTT Broker from Frigate: " .. host)
+            if port then
+                C4:UpdateProperty(PROP_MQTT_PORT, tostring(port))
+            end
+            -- Trigger MQTT connection
+            connectMQTT()
+        end
+    end)
+end
+
 local function checkStatus()
     local base = apiBaseURL()
     if not base then
@@ -528,12 +593,86 @@ local function checkStatus()
 end
 
 ------------------------------------------------------------------------
+-- Adopt Orphan Cameras
+------------------------------------------------------------------------
+
+--- Find existing frigate-camera devices not tracked by this NVR and adopt them.
+--- Sends IDENTIFY_CAMERA to each untracked camera; they respond asynchronously
+--- via ADOPT_RESPONSE with their camera_name.
+local function adoptOrphanCameras()
+    local managed = getManagedCameras()
+    local existingDevices = C4:GetDevicesByC4iName(CAMERA_DRIVER)
+
+    if type(existingDevices) ~= "table" then return end
+
+    -- Build set of already-managed device IDs
+    local managedDeviceIds = {}
+    for _, info in pairs(managed) do
+        if info.deviceId then
+            managedDeviceIds[info.deviceId] = true
+        end
+    end
+
+    local myDeviceId = C4:GetDeviceID()
+    local orphanCount = 0
+
+    for devId, _ in pairs(existingDevices) do
+        devId = tonumber(devId)
+        if devId and not managedDeviceIds[devId] then
+            -- Ask this camera to identify itself
+            C4:SendToDevice(devId, "IDENTIFY_CAMERA", {
+                parent_device_id = tostring(myDeviceId)
+            })
+            orphanCount = orphanCount + 1
+        end
+    end
+
+    if orphanCount > 0 then
+        log(LOG_INFO, "Sent IDENTIFY_CAMERA to " .. orphanCount .. " untracked camera(s)")
+    end
+end
+
+--- Handle ADOPT_RESPONSE from a camera identifying itself.
+local function handleAdoptResponse(tParams)
+    local camName = tParams and tParams.camera_name or ""
+    local devId = tParams and tonumber(tParams.device_id) or nil
+
+    if camName == "" or not devId then return end
+
+    local managed = getManagedCameras()
+    if managed[camName] then
+        log(LOG_DEBUG, "Camera " .. camName .. " already managed, skipping adopt")
+        return
+    end
+
+    managed[camName] = {
+        deviceId = devId,
+        proxyId = nil
+    }
+    saveManagedCameras(managed)
+
+    -- Send current config to the adopted camera
+    local host = Properties[PROP_HOST] or ""
+    local useSub = Properties[PROP_SUB] or "Yes"
+    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
+        host = host,
+        camera_name = camName,
+        use_sub_stream = useSub
+    })
+
+    log(LOG_INFO, "Adopted orphan camera: " .. camName .. " (device " .. devId .. ")")
+end
+
+------------------------------------------------------------------------
 -- Camera Discovery
 ------------------------------------------------------------------------
 
 local function discoverCameras()
     setStatus("Discovering...")
     print("[Frigate NVR] discoverCameras() called")
+
+    -- Adopt any orphan cameras first (e.g. from a previous NVR driver instance)
+    adoptOrphanCameras()
 
     fetchCameras(function(success, cameraNames, hasSubStream)
         print("[Frigate NVR] fetchCameras callback: success=" .. tostring(success) .. " cameras=" .. tostring(#cameraNames))
@@ -655,8 +794,8 @@ local function reconcileCameras()
     local existingDevices = C4:GetDevicesByC4iName(CAMERA_DRIVER)
     local existingSet = {}
     if type(existingDevices) == "table" then
-        for _, devId in pairs(existingDevices) do
-            existingSet[devId] = true
+        for devId, _ in pairs(existingDevices) do
+            existingSet[tonumber(devId)] = true
         end
     end
 
@@ -701,6 +840,11 @@ function ExecuteCommand(sCommand, tParams)
         print("[Frigate NVR] ExecuteCommand: " .. tostring(sCommand))
     end
 
+    if cmd == "ADOPT_RESPONSE" then
+        handleAdoptResponse(tParams)
+        return
+    end
+
     if cmd == "CreateCameras" or cmd == "DiscoverCameras" then
         discoverCameras()
     elseif cmd == "RenameCameras" or cmd == "SyncCameraNames" then
@@ -713,6 +857,8 @@ function ExecuteCommand(sCommand, tParams)
         checkStatus()
     elseif cmd == "ReconnectMQTT" then
         connectMQTT()
+    elseif cmd == "AdoptCameras" then
+        adoptOrphanCameras()
     end
 end
 
@@ -723,6 +869,7 @@ end
 function OnPropertyChanged(sProperty)
     if sProperty == PROP_HOST or sProperty == PROP_PORT then
         checkStatus()
+        autoPopulateMQTT()
     end
     if sProperty == PROP_MQTT_HOST or sProperty == PROP_MQTT_PORT
        or sProperty == PROP_MQTT_USER or sProperty == PROP_MQTT_PASS then
@@ -746,9 +893,10 @@ local function refreshFrigateCameraCount()
 end
 
 function OnDriverLateInit()
-    C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "19")
+    C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "27")
     log(LOG_INFO, "Driver initializing")
     reconcileCameras()
+    adoptOrphanCameras()
     checkStatus()
     refreshFrigateCameraCount()
     connectMQTT()

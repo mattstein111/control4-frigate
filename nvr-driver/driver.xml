@@ -5,57 +5,20 @@
   <name>Frigate NVR</name>
   <model>Frigate NVR Controller</model>
   <created>2026-03-31</created>
-  <modified>2026-04-01</modified>
-  <version>19</version>
+  <modified>2026-04-02</modified>
+  <version>31</version>
 
-  <capabilities>
-    <modes>SNAPSHOT</modes>
-    <has_pan>False</has_pan>
-    <has_pan_scan>False</has_pan_scan>
-    <has_tilt>False</has_tilt>
-    <has_tilt_scan>False</has_tilt_scan>
-    <has_home>False</has_home>
-    <has_zoom>False</has_zoom>
-    <number_presets>0</number_presets>
-    <default_http_port>5000</default_http_port>
-    <default_rtsp_port>554</default_rtsp_port>
-    <default_authentication_required>False</default_authentication_required>
-    <default_authentication_type>NONE</default_authentication_type>
-    <default_username></default_username>
-    <default_password></default_password>
-    <address_readonly>False</address_readonly>
-    <http_port_readonly>False</http_port_readonly>
-    <use_http_for_h264>False</use_http_for_h264>
-  </capabilities>
-
-  <small>devices_sm\camera_sm.gif</small>
-  <large>devices_lg\camera_lg.gif</large>
+  <small image_source="c4z">icons/device_sm.png</small>
+  <large image_source="c4z">icons/device_lg.png</large>
   <control>lua_gen</control>
   <controlmethod>ip</controlmethod>
   <driver>DriverWorks</driver>
 
   <proxies qty="1">
-    <proxy proxybindingid="5001" name="Frigate NVR">camera</proxy>
+    <proxy proxybindingid="5001" name="Frigate NVR">frigate_nvr</proxy>
   </proxies>
 
-  <connections>
-    <connection>
-      <id>5001</id>
-      <facing>6</facing>
-      <connectionname>Frigate NVR</connectionname>
-      <type>2</type>
-      <consumer>False</consumer>
-      <audiosource>False</audiosource>
-      <videosource>False</videosource>
-      <linelevel>False</linelevel>
-      <hidden>True</hidden>
-      <classes>
-        <class>
-          <classname>CAMERA</classname>
-        </class>
-      </classes>
-    </connection>
-  </connections>
+  <combo>true</combo>
 
   <config>
     <properties>
@@ -142,7 +105,7 @@
         <readonly>true</readonly>
       </property>
       <property>
-        <name>Cameras in C4</name>
+        <name>Cameras in Control4</name>
         <type>STRING</type>
         <default>0</default>
         <readonly>true</readonly>
@@ -182,7 +145,7 @@
     </properties>
     <actions>
       <action>
-        <name>Create Cameras</name>
+        <name>Create / Relink Cameras</name>
         <command>CreateCameras</command>
       </action>
       <action>

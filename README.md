@@ -5,7 +5,7 @@
 ![Control4](https://img.shields.io/badge/Control4-OS%203.3%2B-ff6600)
 ![Frigate](https://img.shields.io/badge/Frigate-0.14%2B-blue)
 ![Cameras](https://img.shields.io/badge/Cameras-Unlimited-brightgreen)
-![Events](https://img.shields.io/badge/Events-15%20Types-purple)
+![Events](https://img.shields.io/badge/Events-29%20Types-purple)
 ![Variables](https://img.shields.io/badge/Variables-11-cyan)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
@@ -150,7 +150,7 @@ If cameras pull directly, go2rtc's RTSP server returns 404 because no source is 
 3. Double-click **Frigate NVR** to add it to your project (add it to any room — Rack Room is typical)
 4. Select the driver in the project tree and configure these properties in the **Advanced Properties** section at the bottom:
 
-> **Note:** The NVR driver shows a standard Camera Properties section at the top of the Properties panel. **Ignore it** — the driver reads all configuration from the Advanced Properties section below it. This is a cosmetic side effect of how the driver registers with Composer.
+> **Note:** The NVR driver uses a combo driver proxy, so no Camera Properties panel is shown. All configuration is in the Advanced Properties section.
 
 | Property | What to Enter |
 |----------|---------------|
@@ -158,7 +158,7 @@ If cameras pull directly, go2rtc's RTSP server returns 404 because no source is 
 | **Frigate Port** | Usually `5000` (default) |
 | **Frigate Username** | Only if Frigate has auth enabled — otherwise leave blank |
 | **Frigate Password** | Only if Frigate has auth enabled — otherwise leave blank |
-| **MQTT Broker** | IP address of the MQTT broker (e.g., `10.0.1.50` — often the same server) |
+| **MQTT Broker** | IP address of the MQTT broker. **Auto-populated** from Frigate's config when you set the Frigate Host — only change if your broker is on a different server. |
 | **MQTT Port** | Usually `1883` (default) |
 | **MQTT Username** | Only if the broker requires auth — otherwise leave blank |
 | **MQTT Password** | Only if the broker requires auth — otherwise leave blank |
@@ -173,11 +173,11 @@ If cameras pull directly, go2rtc's RTSP server returns 404 because no source is 
 >
 > **If MQTT Status stays "Connecting...":** Verify the broker IP and port. Ensure the MQTT broker allows connections from the controller's IP. If the broker requires authentication, enter the MQTT Username and Password.
 
-### Step 3 — Create Cameras
+### Step 3 — Create / Relink Cameras
 
-1. In the driver's **Actions** tab, click **Create Cameras**
+1. In the driver's **Actions** tab, click **Create / Relink Cameras**
 2. The driver queries Frigate and creates a camera driver for each camera found
-3. **Cameras in Frigate** and **Cameras in C4** properties update to show counts
+3. **Cameras in Frigate** and **Cameras in Control4** properties update to show counts
 4. New cameras appear in the project tree under the same room as the NVR driver
 5. Cameras without a sub-stream in go2rtc (e.g., single-stream door stations) are automatically configured to use the main stream
 
@@ -205,9 +205,9 @@ After assigning cameras to rooms, click **Synchronize Cameras with Frigate** to:
 2. Go to the **Camera Test** tab in Properties
 3. Click **Get Snapshot URL** then **Test** — should pass
 4. Click **Get MJPEG URL** then **Test** — should pass
-5. On a connected touchscreen or the C4 mobile app, navigate to the camera to verify live video
+5. On a connected touchscreen or the Control4 mobile app, navigate to the camera to verify live video
 
-> **RTSP Camera Test** may fail for cameras with HEVC (H.265) sub-streams — this is expected. The C4 test tool only validates H.264 RTSP. Video will still work in the mobile app via MJPEG fallback. For full RTSP support, configure your cameras' sub-streams as H.264.
+> **RTSP Camera Test** may fail for cameras with HEVC (H.265) sub-streams — this is expected. The Control4 test tool only validates H.264 RTSP. Video will still work in the mobile app via MJPEG fallback. For full RTSP support, configure your cameras' sub-streams as H.264.
 
 ### Step 7 — Program Events (Optional)
 
@@ -275,6 +275,20 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Loitering Detected** | An object stays in a zone beyond the configured time limit |
 | **Camera Online** | Camera becomes reachable |
 | **Camera Offline** | Camera becomes unreachable |
+| **Speech Detected** | Speech audio detected by Frigate |
+| **Bark Detected** | Dog bark audio detected |
+| **Scream Detected** | Scream audio detected |
+| **Yell Detected** | Yell audio detected |
+| **Fire Alarm Detected** | Fire alarm sound detected |
+| **Glass Breaking Detected** | Glass breaking sound detected |
+| **Siren Detected** | Siren sound detected |
+| **Car Horn Detected** | Car horn sound detected |
+| **Music Detected** | Music audio detected |
+| **Audio Detected** | Any audio event detected (generic catch-all) |
+| **Detection Enabled** | Object detection turned on for this camera |
+| **Detection Disabled** | Object detection turned off for this camera |
+| **Recording Enabled** | Recording turned on for this camera |
+| **Recording Disabled** | Recording turned off for this camera |
 
 ### Composer Variables
 
@@ -348,7 +362,7 @@ graph LR
     end
 
     T3[T3/T4 Touchscreen] -->|MJPEG| API
-    APP[C4 Mobile App] -->|RTSP| RS
+    APP[Control4 Mobile App] -->|RTSP| RS
     TV[On-Screen Navigator] -->|MJPEG| API
     ANY[All Navigators] -->|Thumbnail| API
 
@@ -376,7 +390,7 @@ These actions are available in the Frigate NVR driver's **Actions** tab in Compo
 
 | Action | Description |
 |--------|-------------|
-| **Create Cameras** | Queries Frigate API, creates camera drivers for new cameras. Auto-detects sub-stream availability. Safe to re-run — never creates duplicates. |
+| **Create / Relink Cameras** | Queries Frigate API, adopts orphan cameras from a previous NVR driver (preserving room assignments), then creates drivers for any remaining new cameras. Auto-detects sub-stream availability. Also runs automatically on driver startup. Safe to re-run — never creates duplicates. |
 | **Synchronize Cameras with Frigate** | Updates all camera configurations (host, sub-stream) from Frigate, renames to match Frigate names. Use after adding cameras to Frigate or changing settings. |
 | **Reconnect MQTT** | Disconnects and reconnects the MQTT client. Use if detection events stop. |
 | **Check Frigate Status** | Tests Frigate API connectivity and displays the Frigate version. |
@@ -397,6 +411,9 @@ The NVR driver automatically subscribes to these Frigate MQTT topics:
 | `frigate/<camera>/cat` | Cat count per camera |
 | `frigate/<camera>/motion` | Motion `ON` / `OFF` per camera |
 | `frigate/<camera>/<zone>/<object>` | Object count per zone (for zone enter/exit) |
+| `frigate/<camera>/audio/<type>` | Audio detection events (speech, bark, scream, etc.) |
+| `frigate/<camera>/detect/set` | Detection enable/disable state changes |
+| `frigate/<camera>/recordings/set` | Recording enable/disable state changes |
 | `frigate/events` | Full event JSON (used for loitering detection) |
 
 No MQTT configuration is needed on the Frigate side — these topics are published by default when MQTT is enabled in Frigate.
@@ -480,7 +497,7 @@ No. The driver connects to Frigate's standard HTTP and MQTT interfaces. It works
 Yes — add one Frigate NVR driver per server, each pointed at a different IP.
 
 **What happens when a new camera is added to Frigate?**
-Run **Create Cameras** again. It only adds new cameras and won't affect existing ones. Or run **Synchronize Cameras with Frigate** to update everything.
+Run **Create / Relink Cameras** again. It only adds new cameras and won't affect existing ones. Or run **Synchronize Cameras with Frigate** to update everything.
 
 **Do I need to configure anything in Frigate?**
 MQTT must be enabled (it is by default if you have a broker configured). For RTSP streaming to mobile apps, Frigate's camera inputs must route through go2rtc — this is the default in Docker installs. Native/bare-metal installs may need to change ffmpeg input paths from direct camera URLs to `rtsp://127.0.0.1:8554/<camera>`. See the [Streaming Requirement](#frigate-streaming-requirement--cameras-must-route-through-go2rtc) section. MJPEG on touchscreens works regardless.
@@ -491,14 +508,14 @@ Streams will still work — you'll get live video on all navigators. But detecti
 **Will this slow down the Frigate server?**
 Negligible impact. MJPEG streams are on-demand (only active while someone is viewing). RTSP is packet passthrough. Snapshots are already generated by Frigate. The MQTT subscription is lightweight.
 
-**Why does the NVR driver show Camera Properties at the top?**
-The NVR uses a camera proxy internally so it appears in Composer's driver search. This adds a standard Camera Properties section that the driver doesn't use. Configure everything in the Advanced Properties section below it. This is tracked as a known cosmetic issue.
+**Why does the NVR driver show as a combo driver?**
+The NVR uses a combo driver proxy so it appears correctly in Composer's driver search without showing an unnecessary Camera Properties panel. All configuration is in the Advanced Properties section.
 
 **My door station / single-stream camera doesn't show video.**
 The driver defaults to using sub-streams (`<camera>_sub`). If a camera has no sub-stream in go2rtc, run **Synchronize Cameras with Frigate** — the driver auto-detects this and switches to the main stream. Or manually set **Use Sub Stream** to **No** on that camera.
 
 **Can I update the driver without losing camera room assignments?**
-Currently, updating `frigate-camera.c4z` requires deleting and recreating cameras to pick up the new code, which loses room assignments. Loading the updated driver and running **Synchronize** may be enough for property/config changes, but Lua code changes require recreation. This is a known limitation being tracked for improvement.
+Yes. Load the updated `.c4z` files, then delete the old NVR driver and add a new one. On startup, the new NVR driver automatically adopts orphan camera drivers from the previous instance, preserving their room assignments. You can also manually run **Create / Relink Cameras** to trigger adoption.
 
 **How do I enable debug logging?**
 On the NVR driver, set **Log Mode** to `Print` and **Log Level** to `4 - Debug`. Then check the **Lua** tab in Composer Pro to see MQTT messages, API calls, and camera configuration details.

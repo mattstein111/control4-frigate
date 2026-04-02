@@ -41,9 +41,11 @@
   <table>
     <tr><th>Action</th><th>Description</th></tr>
     <tr>
-      <td><strong>Discover Cameras</strong></td>
-      <td>Queries Frigate API for all cameras. Adds a camera driver for each new camera.
-      Existing cameras are updated with current host/sub-stream settings. Safe to run multiple times.</td>
+      <td><strong>Create / Relink Cameras</strong></td>
+      <td>Queries Frigate API for all cameras. First adopts any existing Frigate Camera drivers
+      that are not tracked by this NVR (e.g. after replacing the NVR driver). Then creates a new
+      camera driver for each camera not yet present. Existing cameras are updated with current
+      host/sub-stream settings. Safe to run multiple times.</td>
     </tr>
     <tr>
       <td><strong>Rename Cameras to Frigate Names</strong></td>
@@ -104,7 +106,7 @@ Camera &rarr; Frigate detects object &rarr; MQTT broker
     &darr;
 NVR Driver (parses topic, determines camera + event type)
     &darr;
-Camera Driver (fires C4 events, updates variables, records history)
+Camera Driver (fires Control4 events, updates variables, records history)
     &darr;
 Composer programming triggers (lights, locks, scenes, notifications)
   </pre>
@@ -113,10 +115,16 @@ Composer programming triggers (lights, locks, scenes, notifications)
   <ul>
     <li>Each camera is an <strong>independent driver instance</strong> &mdash; placeable in any room</li>
     <li>The NVR driver tracks cameras persistently (survives reboots)</li>
-    <li>On startup, stale tracking entries are cleaned up automatically</li>
+    <li>On startup, stale tracking entries are cleaned up and orphan cameras are adopted automatically</li>
     <li>MQTT auto-reconnects on disconnect (30-second interval)</li>
     <li>Camera drivers work standalone for streaming even without the NVR driver</li>
   </ul>
+
+  <div class="note">
+    <strong>Replacing the NVR driver?</strong> If you need to remove and re-add the NVR driver
+    (e.g. after a major update), your existing camera drivers will be adopted automatically when
+    the new NVR starts up. No need to recreate cameras or reassign rooms.
+  </div>
 
   <h2>Composer Programming Examples</h2>
 
@@ -170,6 +178,6 @@ Composer programming triggers (lights, locks, scenes, notifications)
     controller before running Discover. Add it via System Design &rarr; Manage Drivers.
   </div>
 
-  <p><em>Version 2 &mdash; Frigate NVR Controller for Control4</em></p>
+  <p><em>Version 3 &mdash; Frigate NVR Controller for Control4</em></p>
 </body>
 </html>

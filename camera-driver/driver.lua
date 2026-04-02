@@ -31,7 +31,7 @@ local PROP_LAST_EVENT  = "Last Event"
 
 -- Ports
 -- MJPEG and snapshots both served by Frigate API on port 5000
--- go2rtc MJPEG (1984) doesn't start sources on-demand — unusable for C4
+-- go2rtc MJPEG (1984) doesn't start sources on-demand — unusable for Control4
 local PORT_HTTP     = 5000
 local PORT_RTSP     = 8554
 
@@ -106,6 +106,7 @@ local function initVariables()
     VAR.LAST_OBJECT_TYPE   = C4:AddVariable("LAST_OBJECT_TYPE", "", "STRING")
     VAR.LAST_ZONE          = C4:AddVariable("LAST_ZONE", "", "STRING")
     VAR.LAST_DETECTION_TIME = C4:AddVariable("LAST_DETECTION_TIME", "", "STRING")
+    VAR.CAMERA_NAME        = C4:AddVariable("CAMERA_NAME", "", "STRING")
 end
 
 local function setVar(varId, value)
@@ -115,7 +116,7 @@ local function setVar(varId, value)
 end
 
 ------------------------------------------------------------------------
--- History (visible in C4 app + touchscreens)
+-- History (visible in Control4 app + touchscreens)
 ------------------------------------------------------------------------
 
 --- Record an event in the device's history log.
@@ -284,6 +285,122 @@ local function handleHealth(tParams)
 end
 
 ------------------------------------------------------------------------
+-- Audio Detection Handler
+------------------------------------------------------------------------
+
+--- Map Frigate audio type names to event names.
+local AUDIO_EVENTS = {
+    speech         = "Audio: Speech",
+    bark           = "Audio: Bark",
+    scream         = "Audio: Scream",
+    yell           = "Audio: Yell",
+    fire_alarm     = "Audio: Fire Alarm",
+    glass_breaking = "Audio: Glass Breaking",
+    siren          = "Audio: Siren",
+    car_horn       = "Audio: Car Horn",
+    music          = "Audio: Music",
+}
+
+--- Handle audio detection from Frigate.
+--- tParams: { audio_type="speech" }
+local function handleAudio(tParams)
+    local audioType = tParams.audio_type or "unknown"
+    local friendly = friendlyObject(audioType:gsub("_", " "))
+    local ts = timestamp()
+
+    setVar(VAR.LAST_DETECTION_TIME, ts)
+
+    local eventName = AUDIO_EVENTS[audioType]
+    if eventName then
+        fireEvent(eventName)
+    end
+    fireEvent("Audio Detected")
+    recordHistory("Audio: " .. friendly, "Info")
+    C4:UpdateProperty(PROP_LAST_EVENT, "Audio: " .. friendly .. " — " .. ts)
+end
+
+------------------------------------------------------------------------
+-- State Change Handlers
+------------------------------------------------------------------------
+
+--- Handle detection/recording/audio state changes from Frigate.
+--- tParams: { setting="detect"|"recordings"|"audio", enabled=true|false }
+local function handleStateChange(tParams)
+    local setting = tParams.setting or ""
+    local enabled = tParams.enabled
+
+    if setting == "detect" then
+        if enabled then
+            fireEvent("Detection Enabled")
+            recordHistory("Detection enabled", "Info")
+        else
+            fireEvent("Detection Disabled")
+            recordHistory("Detection disabled", "Warning")
+        end
+    elseif setting == "recordings" then
+        if enabled then
+            fireEvent("Recording Enabled")
+            recordHistory("Recording enabled", "Info")
+        else
+            fireEvent("Recording Disabled")
+            recordHistory("Recording disabled", "Warning")
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Notification Attachment (snapshot for push notifications)
+------------------------------------------------------------------------
+
+--- Called by the Notification Agent when a push notification fires.
+--- Returns the URL to the current snapshot JPEG.
+function GetNotificationAttachmentURL()
+    local host = Properties[PROP_HOST] or ""
+    local cam = cameraName()
+    if host == "" or not cam then return "" end
+    return "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
+end
+
+--- Register detection events with the History Agent for push notifications.
+local function registerNotificationEvents()
+    local proxyDevices = C4:GetProxyDevices()
+    if type(proxyDevices) ~= "table" then return end
+
+    local proxyDeviceId = nil
+    for id, _ in pairs(proxyDevices) do
+        proxyDeviceId = id
+        break
+    end
+    if not proxyDeviceId then return end
+
+    local types = {
+        "Person Detected", "Car Detected", "Dog Detected", "Cat Detected",
+        "Object Detected", "Motion Started", "Loitering Detected",
+        "Camera Online", "Camera Offline"
+    }
+
+    local typeList = ""
+    for _, t in ipairs(types) do
+        typeList = typeList .. '<type name="' .. t .. '"/>'
+    end
+
+    local xml = '<events>'
+        .. '<device id="' .. proxyDeviceId .. '"/>'
+        .. '<categories><category name="Cameras">'
+        .. '<subcategories><subcategory name="Frigate">'
+        .. '<types>' .. typeList .. '</types>'
+        .. '</subcategory></subcategories>'
+        .. '</category></categories></events>'
+
+    local result = C4:RegisterEvents(xml)
+    if result == 0 then
+        print("[Frigate Camera] Registered notification events for device " .. proxyDeviceId)
+    else
+        print("[Frigate Camera] RegisterEvents returned: " .. tostring(result))
+    end
+end
+
+------------------------------------------------------------------------
 -- Dynamic Stream URL Handlers
 ------------------------------------------------------------------------
 
@@ -432,6 +549,7 @@ function ExecuteCommand(sCommand, tParams)
             end
             if tParams.camera_name and tParams.camera_name ~= "" then
                 C4:UpdateProperty(PROP_CAMERA, tParams.camera_name)
+                setVar(VAR.CAMERA_NAME, tParams.camera_name)
             end
             if tParams.use_sub_stream ~= nil then
                 C4:UpdateProperty(PROP_SUB_STREAM, tParams.use_sub_stream)
@@ -448,6 +566,20 @@ function ExecuteCommand(sCommand, tParams)
         handleLoitering(tParams or {})
     elseif sCommand == "FRIGATE_HEALTH" then
         handleHealth(tParams or {})
+    elseif sCommand == "FRIGATE_AUDIO" then
+        handleAudio(tParams or {})
+    elseif sCommand == "FRIGATE_STATE" then
+        handleStateChange(tParams or {})
+    elseif sCommand == "IDENTIFY_CAMERA" then
+        -- NVR driver is asking us what camera we are (for orphan adoption)
+        local parentId = tParams and tonumber(tParams.parent_device_id) or nil
+        local cam = Properties[PROP_CAMERA] or ""
+        if parentId and cam ~= "" then
+            C4:SendToDevice(parentId, "ADOPT_RESPONSE", {
+                camera_name = cam,
+                device_id = C4:GetDeviceID()
+            })
+        end
     end
 end
 
@@ -466,10 +598,19 @@ end
 ------------------------------------------------------------------------
 
 function OnDriverLateInit()
-    C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "21")
+    C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "23")
 
     -- Initialize variables for Composer programming
     initVariables()
+
+    -- Expose camera name as a variable (readable cross-device by NVR driver)
+    local cam = Properties[PROP_CAMERA] or ""
+    if cam ~= "" then
+        setVar(VAR.CAMERA_NAME, cam)
+    end
+
+    -- Register events for push notification support
+    registerNotificationEvents()
 
     -- Update proxy with current config (address, ports, stream URLs)
     updateProxy()

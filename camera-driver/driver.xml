@@ -5,8 +5,8 @@
   <name>Frigate Camera</name>
   <model>Frigate Camera (go2rtc)</model>
   <created>2026-03-31</created>
-  <modified>2026-04-01</modified>
-  <version>21</version>
+  <modified>2026-04-02</modified>
+  <version>25</version>
 
   <capabilities>
     <modes>SNAPSHOT,MJPEG,H264</modes>
@@ -50,7 +50,7 @@
       <audiosource>False</audiosource>
       <videosource>False</videosource>
       <linelevel>False</linelevel>
-      <hidden>True</hidden>
+      <hidden>False</hidden>
       <classes>
         <class>
           <classname>CAMERA</classname>
@@ -102,6 +102,15 @@
         <readonly>true</readonly>
       </property>
     </properties>
+    <notification_attachment_provider>True</notification_attachment_provider>
+    <notification_attachments>
+      <attachment>
+        <id>1001</id>
+        <type>IMAGE_JPEG</type>
+        <description>Frigate Snapshot</description>
+        <source>URL</source>
+      </attachment>
+    </notification_attachments>
     <documentation file="www/documentation.html"></documentation>
     <script file="driver.lua"></script>
     <power_management_method>AlwaysOn</power_management_method>
@@ -174,6 +183,62 @@
     <event>
       <name>Camera Offline</name>
       <description>Camera has gone offline / is unreachable.</description>
+    </event>
+    <event>
+      <name>Audio: Speech</name>
+      <description>Speech was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Bark</name>
+      <description>A dog bark was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Scream</name>
+      <description>A scream was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Yell</name>
+      <description>Yelling was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Fire Alarm</name>
+      <description>A fire alarm was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Glass Breaking</name>
+      <description>Glass breaking was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Siren</name>
+      <description>A siren was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Car Horn</name>
+      <description>A car horn was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio: Music</name>
+      <description>Music was detected by Frigate audio detection.</description>
+    </event>
+    <event>
+      <name>Audio Detected</name>
+      <description>Any audio event was detected (generic catch-all).</description>
+    </event>
+    <event>
+      <name>Detection Enabled</name>
+      <description>Object detection was enabled on this camera.</description>
+    </event>
+    <event>
+      <name>Detection Disabled</name>
+      <description>Object detection was disabled on this camera.</description>
+    </event>
+    <event>
+      <name>Recording Enabled</name>
+      <description>Recording was enabled on this camera.</description>
+    </event>
+    <event>
+      <name>Recording Disabled</name>
+      <description>Recording was disabled on this camera.</description>
     </event>
   </events>
 </devicedata>

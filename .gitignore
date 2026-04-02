@@ -1,2 +1,12 @@
 # Built driver packages — rebuild with ./build.sh
 dist/
+
+# macOS
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
