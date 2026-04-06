@@ -275,15 +275,15 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Loitering Detected** | An object stays in a zone beyond the configured time limit |
 | **Camera Online** | Camera becomes reachable |
 | **Camera Offline** | Camera becomes unreachable |
-| **Speech Detected** | Speech audio detected by Frigate |
-| **Bark Detected** | Dog bark audio detected |
-| **Scream Detected** | Scream audio detected |
-| **Yell Detected** | Yell audio detected |
-| **Fire Alarm Detected** | Fire alarm sound detected |
-| **Glass Breaking Detected** | Glass breaking sound detected |
-| **Siren Detected** | Siren sound detected |
-| **Car Horn Detected** | Car horn sound detected |
-| **Music Detected** | Music audio detected |
+| **Audio: Speech** | Speech audio detected by Frigate |
+| **Audio: Bark** | Dog bark audio detected |
+| **Audio: Scream** | Scream audio detected |
+| **Audio: Yell** | Yell audio detected |
+| **Audio: Fire Alarm** | Fire alarm sound detected |
+| **Audio: Glass Breaking** | Glass breaking sound detected |
+| **Audio: Siren** | Siren sound detected |
+| **Audio: Car Horn** | Car horn sound detected |
+| **Audio: Music** | Music audio detected |
 | **Audio Detected** | Any audio event detected (generic catch-all) |
 | **Detection Enabled** | Object detection turned on for this camera |
 | **Detection Disabled** | Object detection turned off for this camera |
