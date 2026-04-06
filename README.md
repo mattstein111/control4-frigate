@@ -6,7 +6,7 @@
 ![Frigate](https://img.shields.io/badge/Frigate-0.14%2B-blue)
 ![Cameras](https://img.shields.io/badge/Cameras-Unlimited-brightgreen)
 ![Events](https://img.shields.io/badge/Events-29%20Types-purple)
-![Variables](https://img.shields.io/badge/Variables-11-cyan)
+![Variables](https://img.shields.io/badge/Variables-27-cyan)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -268,8 +268,8 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Cat Detected** | A cat appears |
 | **Object Detected** | Any object detected (generic catch-all) |
 | **Object Left** | An object type's count drops to zero |
-| **Motion Started** | Motion is detected |
-| **Motion Stopped** | Motion ends |
+| **Motion Detected** | Motion is detected |
+| **Motion Not Detected** | Motion ends |
 | **Zone Entered** | An object enters a configured detection zone |
 | **Zone Exited** | All objects of a type leave a zone |
 | **Loitering Detected** | An object stays in a zone beyond the configured time limit |
@@ -300,13 +300,29 @@ Available under each camera for conditional programming:
 | `CAR_DETECTED` | Boolean | "If car detected, open garage" |
 | `DOG_DETECTED` | Boolean | "If dog detected, sound chime" |
 | `CAT_DETECTED` | Boolean | "If cat detected, close pet door" |
-| `MOTION_ACTIVE` | Boolean | "If motion active, keep lights on" |
+| `MOTION_DETECTED` | Boolean | "If motion detected, keep lights on" |
 | `CAMERA_ONLINE` | Boolean | "If camera offline, send alert" |
+| `DETECTION_ENABLED` | Boolean | "If detection disabled, send alert" |
+| `RECORDING_ENABLED` | Boolean | "If recording disabled, send alert" |
+| `LOITERING_DETECTED` | Boolean | "If loitering, send notification" |
 | `PERSON_COUNT` | Number | "If person count > 2, alert homeowner" |
 | `CAR_COUNT` | Number | "If car count = 0, arm alarm" |
-| `LAST_OBJECT_TYPE` | String | Last detected object type |
-| `LAST_ZONE` | String | Last zone with activity |
-| `LAST_DETECTION_TIME` | String | Timestamp of last detection |
+| `PERSON_LAST_SEEN` | String | Timestamp of last person detection |
+| `CAR_LAST_SEEN` | String | Timestamp of last car detection |
+| `DOG_LAST_SEEN` | String | Timestamp of last dog detection |
+| `CAT_LAST_SEEN` | String | Timestamp of last cat detection |
+| `MOTION_LAST_SEEN` | String | Timestamp of last motion |
+| `LOITERING_LAST_SEEN` | String | Timestamp of last loitering event |
+| `AUDIO_LAST_HEARD` | String | Timestamp of last audio event |
+| `SPEECH_LAST_HEARD` | String | Timestamp of last speech detection |
+| `BARK_LAST_HEARD` | String | Timestamp of last bark detection |
+| `SCREAM_LAST_HEARD` | String | Timestamp of last scream |
+| `YELL_LAST_HEARD` | String | Timestamp of last yell |
+| `FIRE_ALARM_LAST_HEARD` | String | Timestamp of last fire alarm |
+| `GLASS_BREAKING_LAST_HEARD` | String | Timestamp of last glass breaking |
+| `SIREN_LAST_HEARD` | String | Timestamp of last siren |
+| `CAR_HORN_LAST_HEARD` | String | Timestamp of last car horn |
+| `MUSIC_LAST_HEARD` | String | Timestamp of last music detection |
 
 ---
 

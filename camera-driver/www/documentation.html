@@ -26,9 +26,9 @@
   <h3>Automatic (recommended)</h3>
   <ol>
     <li>Add the <strong>Frigate NVR</strong> driver first</li>
-    <li>Run <strong>Discover Cameras</strong> &mdash; this driver is created automatically for each camera</li>
+    <li>Run <strong>Create / Relink Cameras</strong> &mdash; this driver is created automatically for each camera</li>
     <li>Move the camera to the appropriate room</li>
-    <li>Optionally run <strong>Rename Cameras to Frigate Names</strong> from the NVR driver</li>
+    <li>Optionally run <strong>Synchronize Cameras with Frigate</strong> from the NVR driver</li>
   </ol>
 
   <h3>Manual</h3>
@@ -43,8 +43,8 @@
   <table>
     <tr><th>Type</th><th>Port</th><th>Used By</th><th>URL Pattern</th></tr>
     <tr>
-      <td>MJPEG</td><td>1984</td><td>Touchscreens, On-Screen, PC</td>
-      <td><code>http://host:1984/api/stream.mjpeg?src=camera_sub</code></td>
+      <td>MJPEG</td><td>5000</td><td>Touchscreens, On-Screen, PC</td>
+      <td><code>http://host:5000/api/camera</code></td>
     </tr>
     <tr>
       <td>RTSP H.264</td><td>8554</td><td>Mobile Apps</td>
@@ -73,10 +73,14 @@
     <tr><td>Dog Detected</td><td>Dog appears</td></tr>
     <tr><td>Cat Detected</td><td>Cat appears</td></tr>
     <tr><td>Object Detected / Object Left</td><td>Any object (generic catch-all)</td></tr>
-    <tr><td>Motion Started / Motion Stopped</td><td>Motion detected or stops</td></tr>
+    <tr><td>Motion Detected / Motion Not Detected</td><td>Motion detected or stops</td></tr>
     <tr><td>Zone Entered / Zone Exited</td><td>Object enters or leaves a detection zone</td></tr>
     <tr><td>Loitering Detected</td><td>Object loiters beyond configured threshold</td></tr>
     <tr><td>Camera Online / Camera Offline</td><td>Camera reachability changes</td></tr>
+    <tr><td>Audio: Speech, Bark, Scream, Yell, Fire Alarm, Glass Breaking, Siren, Car Horn, Music</td><td>Audio detection events from Frigate</td></tr>
+    <tr><td>Audio Detected</td><td>Any audio event (generic catch-all)</td></tr>
+    <tr><td>Detection Enabled / Detection Disabled</td><td>Frigate detection toggled</td></tr>
+    <tr><td>Recording Enabled / Recording Disabled</td><td>Frigate recording toggled</td></tr>
   </table>
 
   <h3>Composer Variables (Conditionals)</h3>
@@ -86,13 +90,29 @@
     <tr><td><code>CAR_DETECTED</code></td><td>Boolean</td><td>Any car currently detected</td></tr>
     <tr><td><code>DOG_DETECTED</code></td><td>Boolean</td><td>Any dog currently detected</td></tr>
     <tr><td><code>CAT_DETECTED</code></td><td>Boolean</td><td>Any cat currently detected</td></tr>
-    <tr><td><code>MOTION_ACTIVE</code></td><td>Boolean</td><td>Motion currently active</td></tr>
+    <tr><td><code>MOTION_DETECTED</code></td><td>Boolean</td><td>Motion currently active</td></tr>
     <tr><td><code>CAMERA_ONLINE</code></td><td>Boolean</td><td>Camera reachable</td></tr>
+    <tr><td><code>DETECTION_ENABLED</code></td><td>Boolean</td><td>Frigate detection on/off</td></tr>
+    <tr><td><code>RECORDING_ENABLED</code></td><td>Boolean</td><td>Frigate recording on/off</td></tr>
+    <tr><td><code>LOITERING_DETECTED</code></td><td>Boolean</td><td>Loitering active (resets on zone exit)</td></tr>
     <tr><td><code>PERSON_COUNT</code></td><td>Number</td><td>Current person count</td></tr>
     <tr><td><code>CAR_COUNT</code></td><td>Number</td><td>Current car count</td></tr>
-    <tr><td><code>LAST_OBJECT_TYPE</code></td><td>String</td><td>Last detected object type</td></tr>
-    <tr><td><code>LAST_ZONE</code></td><td>String</td><td>Last zone with activity</td></tr>
-    <tr><td><code>LAST_DETECTION_TIME</code></td><td>String</td><td>Timestamp of last detection</td></tr>
+    <tr><td><code>PERSON_LAST_SEEN</code></td><td>String</td><td>Timestamp of last person detection</td></tr>
+    <tr><td><code>CAR_LAST_SEEN</code></td><td>String</td><td>Timestamp of last car detection</td></tr>
+    <tr><td><code>DOG_LAST_SEEN</code></td><td>String</td><td>Timestamp of last dog detection</td></tr>
+    <tr><td><code>CAT_LAST_SEEN</code></td><td>String</td><td>Timestamp of last cat detection</td></tr>
+    <tr><td><code>MOTION_LAST_SEEN</code></td><td>String</td><td>Timestamp of last motion</td></tr>
+    <tr><td><code>LOITERING_LAST_SEEN</code></td><td>String</td><td>Timestamp of last loitering event</td></tr>
+    <tr><td><code>AUDIO_LAST_HEARD</code></td><td>String</td><td>Timestamp of last audio event (any type)</td></tr>
+    <tr><td><code>SPEECH_LAST_HEARD</code></td><td>String</td><td>Timestamp of last speech detection</td></tr>
+    <tr><td><code>BARK_LAST_HEARD</code></td><td>String</td><td>Timestamp of last bark detection</td></tr>
+    <tr><td><code>SCREAM_LAST_HEARD</code></td><td>String</td><td>Timestamp of last scream detection</td></tr>
+    <tr><td><code>YELL_LAST_HEARD</code></td><td>String</td><td>Timestamp of last yell detection</td></tr>
+    <tr><td><code>FIRE_ALARM_LAST_HEARD</code></td><td>String</td><td>Timestamp of last fire alarm detection</td></tr>
+    <tr><td><code>GLASS_BREAKING_LAST_HEARD</code></td><td>String</td><td>Timestamp of last glass breaking detection</td></tr>
+    <tr><td><code>SIREN_LAST_HEARD</code></td><td>String</td><td>Timestamp of last siren detection</td></tr>
+    <tr><td><code>CAR_HORN_LAST_HEARD</code></td><td>String</td><td>Timestamp of last car horn detection</td></tr>
+    <tr><td><code>MUSIC_LAST_HEARD</code></td><td>String</td><td>Timestamp of last music detection</td></tr>
   </table>
 
   <h3>History</h3>
@@ -101,9 +121,9 @@
 
   <h2>Requirements</h2>
   <ul>
-    <li>Control4 OS 3.2.0 or newer</li>
+    <li>Control4 OS 3.3.0 or newer</li>
     <li>Frigate NVR 0.14+ with go2rtc enabled</li>
-    <li>go2rtc RTSP restream on port 8554, HTTP API on port 1984</li>
+    <li>go2rtc RTSP restream on port 8554</li>
     <li>Frigate REST API on port 5000</li>
     <li>For detection events: Frigate NVR parent driver + MQTT broker</li>
   </ul>
@@ -113,11 +133,11 @@
     <tr><th>Problem</th><th>Solution</th></tr>
     <tr>
       <td>No video on touchscreen</td>
-      <td>Verify MJPEG URL in browser: <code>http://host:1984/api/stream.mjpeg?src=camera_sub</code></td>
+      <td>Verify MJPEG URL in browser: <code>http://host:5000/api/camera</code></td>
     </tr>
     <tr>
       <td>No video in mobile app</td>
-      <td>RTSP may 404 if go2rtc has no active producer. MJPEG should still work.</td>
+      <td>RTSP may 404 if go2rtc has no active source. Ensure Frigate pulls through go2rtc.</td>
     </tr>
     <tr>
       <td>No snapshot</td>
@@ -133,6 +153,6 @@
     </tr>
   </table>
 
-  <p><em>Version 2 &mdash; Frigate Camera Driver for Control4</em></p>
+  <p><em>Version 3 &mdash; Frigate Camera Driver for Control4</em></p>
 </body>
 </html>

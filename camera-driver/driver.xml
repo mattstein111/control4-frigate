@@ -125,118 +125,147 @@
 
   <events>
     <event>
+      <id>1</id>
       <name>Person Detected</name>
       <description>A person was detected by Frigate on this camera.</description>
     </event>
     <event>
+      <id>2</id>
       <name>Person Left</name>
       <description>All persons have left the camera's field of view.</description>
     </event>
     <event>
+      <id>3</id>
       <name>Car Detected</name>
       <description>A car was detected by Frigate on this camera.</description>
     </event>
     <event>
+      <id>4</id>
       <name>Car Left</name>
       <description>All cars have left the camera's field of view.</description>
     </event>
     <event>
+      <id>5</id>
       <name>Dog Detected</name>
       <description>A dog was detected by Frigate on this camera.</description>
     </event>
     <event>
+      <id>6</id>
       <name>Cat Detected</name>
       <description>A cat was detected by Frigate on this camera.</description>
     </event>
     <event>
+      <id>7</id>
       <name>Object Detected</name>
       <description>Any object was detected (generic catch-all).</description>
     </event>
     <event>
+      <id>8</id>
       <name>Object Left</name>
       <description>An object type count dropped to zero.</description>
     </event>
     <event>
-      <name>Motion Started</name>
+      <id>9</id>
+      <name>Motion Detected</name>
       <description>Motion was detected on this camera.</description>
     </event>
     <event>
-      <name>Motion Stopped</name>
+      <id>10</id>
+      <name>Motion Not Detected</name>
       <description>Motion has stopped on this camera.</description>
     </event>
     <event>
+      <id>11</id>
       <name>Zone Entered</name>
       <description>An object entered a detection zone.</description>
     </event>
     <event>
+      <id>12</id>
       <name>Zone Exited</name>
       <description>All objects of a type left a detection zone.</description>
     </event>
     <event>
+      <id>13</id>
       <name>Loitering Detected</name>
       <description>An object has been loitering in a zone beyond the configured threshold.</description>
     </event>
     <event>
+      <id>14</id>
       <name>Camera Online</name>
       <description>Camera has come online / is reachable.</description>
     </event>
     <event>
+      <id>15</id>
       <name>Camera Offline</name>
       <description>Camera has gone offline / is unreachable.</description>
     </event>
     <event>
+      <id>16</id>
       <name>Audio: Speech</name>
       <description>Speech was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>17</id>
       <name>Audio: Bark</name>
       <description>A dog bark was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>18</id>
       <name>Audio: Scream</name>
       <description>A scream was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>19</id>
       <name>Audio: Yell</name>
       <description>Yelling was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>20</id>
       <name>Audio: Fire Alarm</name>
       <description>A fire alarm was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>21</id>
       <name>Audio: Glass Breaking</name>
       <description>Glass breaking was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>22</id>
       <name>Audio: Siren</name>
       <description>A siren was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>23</id>
       <name>Audio: Car Horn</name>
       <description>A car horn was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>24</id>
       <name>Audio: Music</name>
       <description>Music was detected by Frigate audio detection.</description>
     </event>
     <event>
+      <id>25</id>
       <name>Audio Detected</name>
       <description>Any audio event was detected (generic catch-all).</description>
     </event>
     <event>
+      <id>26</id>
       <name>Detection Enabled</name>
       <description>Object detection was enabled on this camera.</description>
     </event>
     <event>
+      <id>27</id>
       <name>Detection Disabled</name>
       <description>Object detection was disabled on this camera.</description>
     </event>
     <event>
+      <id>28</id>
       <name>Recording Enabled</name>
       <description>Recording was enabled on this camera.</description>
     </event>
     <event>
+      <id>29</id>
       <name>Recording Disabled</name>
       <description>Recording was disabled on this camera.</description>
     </event>

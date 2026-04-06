@@ -16,9 +16,10 @@
 
   Variables exposed for Composer programming:
     PERSON_DETECTED, CAR_DETECTED, DOG_DETECTED, CAT_DETECTED (bool)
-    MOTION_ACTIVE (bool), CAMERA_ONLINE (bool)
+    MOTION_DETECTED (bool), CAMERA_ONLINE (bool)
     PERSON_COUNT, CAR_COUNT (int)
-    LAST_OBJECT_TYPE, LAST_ZONE, LAST_DETECTION_TIME (string)
+    PERSON_LAST_SEEN, CAR_LAST_SEEN, DOG_LAST_SEEN, CAT_LAST_SEEN, MOTION_LAST_SEEN, LOITERING_LAST_SEEN (string)
+    AUDIO_LAST_HEARD, SPEECH_LAST_HEARD, BARK_LAST_HEARD, etc. (string)
 ]]
 
 -- Property name constants
@@ -95,7 +96,7 @@ local function initVariables()
     VAR.CAR_DETECTED       = C4:AddVariable("CAR_DETECTED", "false", "BOOL")
     VAR.DOG_DETECTED       = C4:AddVariable("DOG_DETECTED", "false", "BOOL")
     VAR.CAT_DETECTED       = C4:AddVariable("CAT_DETECTED", "false", "BOOL")
-    VAR.MOTION_ACTIVE      = C4:AddVariable("MOTION_ACTIVE", "false", "BOOL")
+    VAR.MOTION_DETECTED    = C4:AddVariable("MOTION_DETECTED", "false", "BOOL")
     VAR.CAMERA_ONLINE      = C4:AddVariable("CAMERA_ONLINE", "true", "BOOL")
 
     -- Numeric variables
@@ -107,24 +108,25 @@ local function initVariables()
     VAR.RECORDING_ENABLED  = C4:AddVariable("RECORDING_ENABLED", "true", "BOOL")
     VAR.LOITERING_DETECTED = C4:AddVariable("LOITERING_DETECTED", "false", "BOOL")
 
-    -- Audio variables
-    VAR.AUDIO_DETECTED     = C4:AddVariable("AUDIO_DETECTED", "false", "BOOL")
-    VAR.AUDIO_SPEECH       = C4:AddVariable("AUDIO_SPEECH", "false", "BOOL")
-    VAR.AUDIO_BARK         = C4:AddVariable("AUDIO_BARK", "false", "BOOL")
-    VAR.AUDIO_SCREAM       = C4:AddVariable("AUDIO_SCREAM", "false", "BOOL")
-    VAR.AUDIO_YELL         = C4:AddVariable("AUDIO_YELL", "false", "BOOL")
-    VAR.AUDIO_FIRE_ALARM   = C4:AddVariable("AUDIO_FIRE_ALARM", "false", "BOOL")
-    VAR.AUDIO_GLASS_BREAKING = C4:AddVariable("AUDIO_GLASS_BREAKING", "false", "BOOL")
-    VAR.AUDIO_SIREN        = C4:AddVariable("AUDIO_SIREN", "false", "BOOL")
-    VAR.AUDIO_CAR_HORN     = C4:AddVariable("AUDIO_CAR_HORN", "false", "BOOL")
-    VAR.AUDIO_MUSIC        = C4:AddVariable("AUDIO_MUSIC", "false", "BOOL")
+    -- Last-seen timestamps (object/motion/loitering)
+    VAR.PERSON_LAST_SEEN       = C4:AddVariable("PERSON_LAST_SEEN", "", "STRING")
+    VAR.CAR_LAST_SEEN          = C4:AddVariable("CAR_LAST_SEEN", "", "STRING")
+    VAR.DOG_LAST_SEEN          = C4:AddVariable("DOG_LAST_SEEN", "", "STRING")
+    VAR.CAT_LAST_SEEN          = C4:AddVariable("CAT_LAST_SEEN", "", "STRING")
+    VAR.MOTION_LAST_SEEN       = C4:AddVariable("MOTION_LAST_SEEN", "", "STRING")
+    VAR.LOITERING_LAST_SEEN    = C4:AddVariable("LOITERING_LAST_SEEN", "", "STRING")
 
-    -- String variables
-    VAR.LAST_OBJECT_TYPE   = C4:AddVariable("LAST_OBJECT_TYPE", "", "STRING")
-    VAR.LAST_ZONE          = C4:AddVariable("LAST_ZONE", "", "STRING")
-    VAR.LAST_DETECTION_TIME = C4:AddVariable("LAST_DETECTION_TIME", "", "STRING")
-    VAR.LAST_AUDIO_TYPE    = C4:AddVariable("LAST_AUDIO_TYPE", "", "STRING")
-    VAR.CAMERA_NAME        = C4:AddVariable("CAMERA_NAME", "", "STRING")
+    -- Last-heard timestamps (audio)
+    VAR.AUDIO_LAST_HEARD           = C4:AddVariable("AUDIO_LAST_HEARD", "", "STRING")
+    VAR.SPEECH_LAST_HEARD          = C4:AddVariable("SPEECH_LAST_HEARD", "", "STRING")
+    VAR.BARK_LAST_HEARD            = C4:AddVariable("BARK_LAST_HEARD", "", "STRING")
+    VAR.SCREAM_LAST_HEARD          = C4:AddVariable("SCREAM_LAST_HEARD", "", "STRING")
+    VAR.YELL_LAST_HEARD            = C4:AddVariable("YELL_LAST_HEARD", "", "STRING")
+    VAR.FIRE_ALARM_LAST_HEARD      = C4:AddVariable("FIRE_ALARM_LAST_HEARD", "", "STRING")
+    VAR.GLASS_BREAKING_LAST_HEARD  = C4:AddVariable("GLASS_BREAKING_LAST_HEARD", "", "STRING")
+    VAR.SIREN_LAST_HEARD           = C4:AddVariable("SIREN_LAST_HEARD", "", "STRING")
+    VAR.CAR_HORN_LAST_HEARD        = C4:AddVariable("CAR_HORN_LAST_HEARD", "", "STRING")
+    VAR.MUSIC_LAST_HEARD           = C4:AddVariable("MUSIC_LAST_HEARD", "", "STRING")
 end
 
 local function setVar(varId, value)
@@ -150,9 +152,45 @@ end
 -- Event Firing (for Composer programming)
 ------------------------------------------------------------------------
 
+--- Event name to numeric ID mapping (must match driver.xml <event><id>).
+local EVENT_IDS = {
+    ["Person Detected"]      = 1,
+    ["Person Left"]          = 2,
+    ["Car Detected"]         = 3,
+    ["Car Left"]             = 4,
+    ["Dog Detected"]         = 5,
+    ["Cat Detected"]         = 6,
+    ["Object Detected"]      = 7,
+    ["Object Left"]          = 8,
+    ["Motion Detected"]      = 9,
+    ["Motion Not Detected"]  = 10,
+    ["Zone Entered"]         = 11,
+    ["Zone Exited"]          = 12,
+    ["Loitering Detected"]   = 13,
+    ["Camera Online"]        = 14,
+    ["Camera Offline"]       = 15,
+    ["Audio: Speech"]        = 16,
+    ["Audio: Bark"]          = 17,
+    ["Audio: Scream"]        = 18,
+    ["Audio: Yell"]          = 19,
+    ["Audio: Fire Alarm"]    = 20,
+    ["Audio: Glass Breaking"] = 21,
+    ["Audio: Siren"]         = 22,
+    ["Audio: Car Horn"]      = 23,
+    ["Audio: Music"]         = 24,
+    ["Audio Detected"]       = 25,
+    ["Detection Enabled"]    = 26,
+    ["Detection Disabled"]   = 27,
+    ["Recording Enabled"]    = 28,
+    ["Recording Disabled"]   = 29,
+}
+
 --- Fire a named event declared in driver.xml <events>.
 local function fireEvent(eventName)
-    C4:FireEvent(eventName)
+    local eventId = EVENT_IDS[eventName]
+    if eventId then
+        C4:FireEvent(eventId)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -169,13 +207,10 @@ local function handleDetection(tParams)
     local friendly = friendlyObject(objType)
     local ts = timestamp()
 
-    -- Update variables
-    setVar(VAR.LAST_OBJECT_TYPE, objType)
-    setVar(VAR.LAST_DETECTION_TIME, ts)
-
     if objType == "person" then
         setVar(VAR.PERSON_COUNT, count)
         setVar(VAR.PERSON_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.PERSON_LAST_SEEN, ts) end
         if count > 0 and eventType == "new" then
             fireEvent("Person Detected")
             fireEvent("Object Detected")
@@ -188,6 +223,7 @@ local function handleDetection(tParams)
     elseif objType == "car" then
         setVar(VAR.CAR_COUNT, count)
         setVar(VAR.CAR_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.CAR_LAST_SEEN, ts) end
         if count > 0 and eventType == "new" then
             fireEvent("Car Detected")
             fireEvent("Object Detected")
@@ -199,6 +235,7 @@ local function handleDetection(tParams)
         end
     elseif objType == "dog" then
         setVar(VAR.DOG_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.DOG_LAST_SEEN, ts) end
         if count > 0 and eventType == "new" then
             fireEvent("Dog Detected")
             fireEvent("Object Detected")
@@ -209,6 +246,7 @@ local function handleDetection(tParams)
         end
     elseif objType == "cat" then
         setVar(VAR.CAT_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.CAT_LAST_SEEN, ts) end
         if count > 0 and eventType == "new" then
             fireEvent("Cat Detected")
             fireEvent("Object Detected")
@@ -235,13 +273,14 @@ end
 --- tParams: { active=true|false }
 local function handleMotion(tParams)
     local active = tParams.active
-    setVar(VAR.MOTION_ACTIVE, active and "true" or "false")
+    setVar(VAR.MOTION_DETECTED, active and "true" or "false")
 
     if active then
-        fireEvent("Motion Started")
-        recordHistory("Motion started", "Info")
+        setVar(VAR.MOTION_LAST_SEEN, timestamp())
+        fireEvent("Motion Detected")
+        recordHistory("Motion detected", "Info")
     else
-        fireEvent("Motion Stopped")
+        fireEvent("Motion Not Detected")
         recordHistory("Motion stopped", "Info")
     end
 end
@@ -255,14 +294,12 @@ local function handleZone(tParams)
     local friendly = friendlyObject(objType)
     local friendlyZ = friendlyZone(zone)
 
-    setVar(VAR.LAST_ZONE, zone)
-    setVar(VAR.LAST_OBJECT_TYPE, objType)
-    setVar(VAR.LAST_DETECTION_TIME, timestamp())
-
     if count > 0 then
         fireEvent("Zone Entered")
         recordHistory(friendly .. " entered zone: " .. friendlyZ, "Info")
     else
+        -- Reset loitering when zone clears
+        setVar(VAR.LOITERING_DETECTED, "false")
         fireEvent("Zone Exited")
         recordHistory(friendly .. " left zone: " .. friendlyZ, "Info")
     end
@@ -276,10 +313,8 @@ local function handleLoitering(tParams)
     local friendly = friendlyObject(objType)
     local friendlyZ = friendlyZone(zone)
 
-    setVar(VAR.LAST_ZONE, zone)
-    setVar(VAR.LAST_OBJECT_TYPE, objType)
-    setVar(VAR.LAST_DETECTION_TIME, timestamp())
     setVar(VAR.LOITERING_DETECTED, "true")
+    setVar(VAR.LOITERING_LAST_SEEN, timestamp())
 
     fireEvent("Loitering Detected")
     recordHistory(friendly .. " loitering in zone: " .. friendlyZ, "Warning")
@@ -327,24 +362,21 @@ local function handleAudio(tParams)
     local friendly = friendlyObject(audioType:gsub("_", " "))
     local ts = timestamp()
 
-    setVar(VAR.LAST_DETECTION_TIME, ts)
-    setVar(VAR.LAST_AUDIO_TYPE, audioType)
-    setVar(VAR.AUDIO_DETECTED, "true")
-
-    -- Set specific audio variable
-    local AUDIO_VARS = {
-        speech         = VAR.AUDIO_SPEECH,
-        bark           = VAR.AUDIO_BARK,
-        scream         = VAR.AUDIO_SCREAM,
-        yell           = VAR.AUDIO_YELL,
-        fire_alarm     = VAR.AUDIO_FIRE_ALARM,
-        glass_breaking = VAR.AUDIO_GLASS_BREAKING,
-        siren          = VAR.AUDIO_SIREN,
-        car_horn       = VAR.AUDIO_CAR_HORN,
-        music          = VAR.AUDIO_MUSIC,
+    -- Update last-heard timestamps
+    setVar(VAR.AUDIO_LAST_HEARD, ts)
+    local AUDIO_LAST_HEARD_VARS = {
+        speech         = VAR.SPEECH_LAST_HEARD,
+        bark           = VAR.BARK_LAST_HEARD,
+        scream         = VAR.SCREAM_LAST_HEARD,
+        yell           = VAR.YELL_LAST_HEARD,
+        fire_alarm     = VAR.FIRE_ALARM_LAST_HEARD,
+        glass_breaking = VAR.GLASS_BREAKING_LAST_HEARD,
+        siren          = VAR.SIREN_LAST_HEARD,
+        car_horn       = VAR.CAR_HORN_LAST_HEARD,
+        music          = VAR.MUSIC_LAST_HEARD,
     }
-    if AUDIO_VARS[audioType] then
-        setVar(AUDIO_VARS[audioType], "true")
+    if AUDIO_LAST_HEARD_VARS[audioType] then
+        setVar(AUDIO_LAST_HEARD_VARS[audioType], ts)
     end
 
     local eventName = AUDIO_EVENTS[audioType]
@@ -393,11 +425,14 @@ end
 
 --- Called by the Notification Agent when a push notification fires.
 --- Returns the URL to the current snapshot JPEG.
-function GetNotificationAttachmentURL()
+function GetNotificationAttachmentURL(idBinding, tParams)
     local host = Properties[PROP_HOST] or ""
     local cam = cameraName()
+    print("[Frigate Camera] GetNotificationAttachmentURL called (binding=" .. tostring(idBinding) .. " cam=" .. tostring(cam) .. ")")
     if host == "" or not cam then return "" end
-    return "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
+    local url = "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
+    print("[Frigate Camera] Snapshot URL: " .. url)
+    return url
 end
 
 --- Register detection events with the History Agent for push notifications.
@@ -414,7 +449,7 @@ local function registerNotificationEvents()
 
     local types = {
         "Person Detected", "Car Detected", "Dog Detected", "Cat Detected",
-        "Object Detected", "Motion Started", "Loitering Detected",
+        "Object Detected", "Motion Detected", "Loitering Detected",
         "Camera Online", "Camera Offline"
     }
 
@@ -588,7 +623,6 @@ function ExecuteCommand(sCommand, tParams)
             end
             if tParams.camera_name and tParams.camera_name ~= "" then
                 C4:UpdateProperty(PROP_CAMERA, tParams.camera_name)
-                setVar(VAR.CAMERA_NAME, tParams.camera_name)
             end
             if tParams.use_sub_stream ~= nil then
                 C4:UpdateProperty(PROP_SUB_STREAM, tParams.use_sub_stream)
@@ -641,12 +675,6 @@ function OnDriverLateInit()
 
     -- Initialize variables for Composer programming
     initVariables()
-
-    -- Expose camera name as a variable (readable cross-device by NVR driver)
-    local cam = Properties[PROP_CAMERA] or ""
-    if cam ~= "" then
-        setVar(VAR.CAMERA_NAME, cam)
-    end
 
     -- Register events for push notification support
     registerNotificationEvents()

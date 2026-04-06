@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.5-beta] - 2026-04-06
+
+### Fixed
+
+- Events now fire on the camera proxy (binding 5001) — all 29 events visible in Composer Programming tab
+- `LOITERING_DETECTED` variable now resets to false when the zone clears
+
+### Changed
+
+- Motion events renamed: "Motion Started" → "Motion Detected", "Motion Stopped" → "Motion Not Detected"
+- `MOTION_ACTIVE` variable renamed to `MOTION_DETECTED` for consistency
+- MQTT subscriptions narrowed from broad `frigate/+/+/+` wildcard to specific per-object-type topics, reducing message volume on busy installs (#10)
+- Replaced 10 audio boolean variables (never auto-reset) with `_LAST_HEARD` timestamp variables per audio type
+- Replaced `LAST_OBJECT_TYPE`, `LAST_ZONE`, `LAST_DETECTION_TIME`, `LAST_AUDIO_TYPE` with per-type `_LAST_SEEN` / `_LAST_HEARD` timestamps
+- Removed `CAMERA_NAME` variable (redundant with driver property)
+- Variables: 27 total (11 boolean, 2 numeric, 6 last-seen, 10 last-heard) — down from 25 but more useful
+
+### Added
+
+- `_LAST_SEEN` timestamp variables: `PERSON_LAST_SEEN`, `CAR_LAST_SEEN`, `DOG_LAST_SEEN`, `CAT_LAST_SEEN`, `MOTION_LAST_SEEN`, `LOITERING_LAST_SEEN`
+- `_LAST_HEARD` timestamp variables: `AUDIO_LAST_HEARD`, `SPEECH_LAST_HEARD`, `BARK_LAST_HEARD`, `SCREAM_LAST_HEARD`, `YELL_LAST_HEARD`, `FIRE_ALARM_LAST_HEARD`, `GLASS_BREAKING_LAST_HEARD`, `SIREN_LAST_HEARD`, `CAR_HORN_LAST_HEARD`, `MUSIC_LAST_HEARD`
+- Debug logging on `GetNotificationAttachmentURL()` for push notification troubleshooting (#4, #12)
+- GitHub Actions CI: build on push/PR, auto-attach `.c4z` artifacts to releases
+
 ## [0.8.0-beta] - 2026-04-02
 
 ### Added
@@ -50,5 +74,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - MQTT auto-reconnect on 30-second timer
 - Support for Frigate and MQTT authentication (optional)
 
+[0.8.5-beta]: https://github.com/mattstein111/control4-frigate/releases/tag/v0.8.5-beta
 [0.8.0-beta]: https://github.com/mattstein111/control4-frigate/releases/tag/v0.8.0-beta
 [0.7.0-beta]: https://github.com/mattstein111/control4-frigate/releases/tag/v0.7.0-beta

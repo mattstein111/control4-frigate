@@ -8,14 +8,14 @@
   events, and variables.
 
   MQTT subscriptions:
-    frigate/available          — Frigate online/offline status
-    frigate/+/person           — person count per camera
-    frigate/+/car              — car count per camera
-    frigate/+/dog              — dog count per camera
-    frigate/+/cat              — cat count per camera
-    frigate/+/motion           — motion ON/OFF per camera
-    frigate/+/+/+              — zone events (camera/zone/object = count)
-    frigate/events             — full event JSON (for new/end event types)
+    frigate/available              — Frigate online/offline status
+    frigate/events                 — full event JSON (for loitering detection)
+    frigate/+/person|car|dog|cat   — object count per camera
+    frigate/+/motion               — motion ON/OFF per camera
+    frigate/+/+/person|car|dog|cat — zone object counts
+    frigate/+/audio/+              — audio detection events
+    frigate/+/detect/state         — detection enable/disable
+    frigate/+/recordings/state     — recording enable/disable
 
   Orphan adoption:
     On init and via "Adopt Existing Cameras" action, finds frigate-camera
@@ -209,16 +209,22 @@ local function subscribeFrigateTopics()
 
     local topics = {
         "frigate/available",
+        "frigate/events",
+        -- Per-camera object counts
         "frigate/+/person",
         "frigate/+/car",
         "frigate/+/dog",
         "frigate/+/cat",
         "frigate/+/motion",
-        "frigate/+/+/+",
-        "frigate/events",
+        -- Zone events: frigate/<camera>/<zone>/<object>
+        "frigate/+/+/person",
+        "frigate/+/+/car",
+        "frigate/+/+/dog",
+        "frigate/+/+/cat",
+        -- Audio and state
         "frigate/+/audio/+",
         "frigate/+/detect/state",
-        "frigate/+/recordings/state"
+        "frigate/+/recordings/state",
     }
 
     for _, topic in ipairs(topics) do
