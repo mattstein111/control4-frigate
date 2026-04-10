@@ -35,6 +35,15 @@
   <control>lua_gen</control>
   <controlmethod>ip</controlmethod>
   <driver>DriverWorks</driver>
+  <notification_attachment_provider>True</notification_attachment_provider>
+  <notification_attachments>
+    <attachment>
+      <id>1001</id>
+      <type>IMAGE_JPEG</type>
+      <description>Frigate Snapshot</description>
+      <source>URL</source>
+    </attachment>
+  </notification_attachments>
 
   <proxies qty="1">
     <proxy proxybindingid="5001" name="Frigate Camera">camera</proxy>
@@ -102,15 +111,6 @@
         <readonly>true</readonly>
       </property>
     </properties>
-    <notification_attachment_provider>True</notification_attachment_provider>
-    <notification_attachments>
-      <attachment>
-        <id>1001</id>
-        <type>IMAGE_JPEG</type>
-        <description>Frigate Snapshot</description>
-        <source>URL</source>
-      </attachment>
-    </notification_attachments>
     <documentation file="www/documentation.html"></documentation>
     <script file="driver.lua"></script>
     <power_management_method>AlwaysOn</power_management_method>
