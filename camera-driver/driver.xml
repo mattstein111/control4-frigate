@@ -5,8 +5,8 @@
   <name>Frigate Camera</name>
   <model>Frigate Camera (go2rtc)</model>
   <created>2026-03-31</created>
-  <modified>2026-04-02</modified>
-  <version>26</version>
+  <modified>2026-04-11</modified>
+  <version>35</version>
 
   <capabilities>
     <modes>SNAPSHOT,MJPEG,H264</modes>
@@ -110,6 +110,38 @@
         <default></default>
         <readonly>true</readonly>
       </property>
+      <property>
+        <name>Last Motion</name>
+        <type>STRING</type>
+        <default></default>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Log Level</name>
+        <type>LIST</type>
+        <default>2 - Warning</default>
+        <readonly>false</readonly>
+        <items>
+          <item>0 - Fatal</item>
+          <item>1 - Error</item>
+          <item>2 - Warning</item>
+          <item>3 - Info</item>
+          <item>4 - Debug</item>
+          <item>5 - Trace</item>
+        </items>
+      </property>
+      <property>
+        <name>Log Mode</name>
+        <type>LIST</type>
+        <default>Off</default>
+        <readonly>false</readonly>
+        <items>
+          <item>Off</item>
+          <item>Print</item>
+          <item>Log</item>
+          <item>Print and Log</item>
+        </items>
+      </property>
     </properties>
     <documentation file="www/documentation.html"></documentation>
     <script file="driver.lua"></script>
@@ -171,7 +203,7 @@
     </event>
     <event>
       <id>10</id>
-      <name>Motion Not Detected</name>
+      <name>Motion Stopped</name>
       <description>Motion has stopped on this camera.</description>
     </event>
     <event>

@@ -29,6 +29,44 @@ local PROP_CAMERA      = "Camera Name"
 local PROP_SUB_STREAM  = "Use Sub Stream"
 local PROP_STATUS      = "Camera Status"
 local PROP_LAST_EVENT  = "Last Event"
+local PROP_LAST_MOTION = "Last Motion"
+local PROP_LOG_LEVEL   = "Log Level"
+
+-- Log levels
+local LOG_FATAL   = 0
+local LOG_ERROR   = 1
+local LOG_WARNING = 2
+local LOG_INFO    = 3
+local LOG_DEBUG   = 4
+local LOG_TRACE   = 5
+
+local LOG_LEVEL_MAP = {
+    ["0 - Fatal"]   = LOG_FATAL,
+    ["1 - Error"]   = LOG_ERROR,
+    ["2 - Warning"] = LOG_WARNING,
+    ["3 - Info"]    = LOG_INFO,
+    ["4 - Debug"]   = LOG_DEBUG,
+    ["5 - Trace"]   = LOG_TRACE,
+}
+
+local PROP_LOG_MODE    = "Log Mode"
+
+local function log(level, msg)
+    local current = LOG_LEVEL_MAP[Properties[PROP_LOG_LEVEL] or "2 - Warning"] or LOG_WARNING
+    if level > current then return end
+    local mode = Properties[PROP_LOG_MODE] or "Off"
+    if mode == "Off" then return end
+
+    local cam = Properties[PROP_CAMERA] or "?"
+    local fullMsg = "[Frigate Camera][" .. cam .. "] " .. msg
+
+    if mode == "Print" or mode == "Print and Log" then
+        print(fullMsg)
+    end
+    if mode == "Log" or mode == "Print and Log" then
+        C4:ErrorLog(fullMsg)
+    end
+end
 
 -- Ports
 -- MJPEG and snapshots both served by Frigate API on port 5000
@@ -163,7 +201,7 @@ local EVENT_IDS = {
     ["Object Detected"]      = 7,
     ["Object Left"]          = 8,
     ["Motion Detected"]      = 9,
-    ["Motion Not Detected"]  = 10,
+    ["Motion Stopped"]  = 10,
     ["Zone Entered"]         = 11,
     ["Zone Exited"]          = 12,
     ["Loitering Detected"]   = 13,
@@ -189,7 +227,8 @@ local EVENT_IDS = {
 local function fireEvent(eventName)
     local eventId = EVENT_IDS[eventName]
     if eventId then
-        C4:FireEvent(eventId)
+        C4:FireEvent(eventName)
+        log(LOG_DEBUG, "Fired event: " .. eventName .. " (id=" .. eventId .. ")")
     end
 end
 
@@ -272,15 +311,19 @@ end
 --- Handle motion on/off from MQTT.
 --- tParams: { active=true|false }
 local function handleMotion(tParams)
-    local active = tParams.active
+    local raw = tParams.active
+    log(LOG_DEBUG, "handleMotion: active = " .. tostring(raw) .. " (type: " .. type(raw) .. ")")
+    local active = (raw ~= false and raw ~= "false" and raw ~= "False" and raw ~= 0 and raw ~= "0" and raw ~= nil)
     setVar(VAR.MOTION_DETECTED, active and "true" or "false")
 
     if active then
-        setVar(VAR.MOTION_LAST_SEEN, timestamp())
+        local ts = timestamp()
+        setVar(VAR.MOTION_LAST_SEEN, ts)
+        C4:UpdateProperty(PROP_LAST_MOTION, ts)
         fireEvent("Motion Detected")
         recordHistory("Motion detected", "Info")
     else
-        fireEvent("Motion Not Detected")
+        fireEvent("Motion Stopped")
         recordHistory("Motion stopped", "Info")
     end
 end
@@ -324,7 +367,8 @@ end
 --- Handle camera health status.
 --- tParams: { online=true|false }
 local function handleHealth(tParams)
-    local online = tParams.online
+    local raw = tParams.online
+    local online = (raw ~= false and raw ~= "false" and raw ~= "False" and raw ~= 0 and raw ~= "0" and raw ~= nil)
     setVar(VAR.CAMERA_ONLINE, online and "true" or "false")
 
     if online then
@@ -396,7 +440,8 @@ end
 --- tParams: { setting="detect"|"recordings"|"audio", enabled=true|false }
 local function handleStateChange(tParams)
     local setting = tParams.setting or ""
-    local enabled = tParams.enabled
+    local raw_enabled = tParams.enabled
+    local enabled = (raw_enabled ~= false and raw_enabled ~= "false" and raw_enabled ~= "False" and raw_enabled ~= 0 and raw_enabled ~= "0" and raw_enabled ~= nil)
 
     if setting == "detect" then
         setVar(VAR.DETECTION_ENABLED, enabled and "true" or "false")
@@ -428,10 +473,10 @@ end
 function GetNotificationAttachmentURL(idBinding, tParams)
     local host = Properties[PROP_HOST] or ""
     local cam = cameraName()
-    print("[Frigate Camera] GetNotificationAttachmentURL called (binding=" .. tostring(idBinding) .. " cam=" .. tostring(cam) .. ")")
+    log(LOG_DEBUG, "GetNotificationAttachmentURL called (binding=" .. tostring(idBinding) .. " cam=" .. tostring(cam) .. ")")
     if host == "" or not cam then return "" end
     local url = "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
-    print("[Frigate Camera] Snapshot URL: " .. url)
+    log(LOG_DEBUG, "Snapshot URL: " .. url)
     return url
 end
 
@@ -468,9 +513,9 @@ local function registerNotificationEvents()
 
     local result = C4:RegisterEvents(xml)
     if result == 0 then
-        print("[Frigate Camera] Registered notification events for device " .. proxyDeviceId)
+        log(LOG_INFO, "Registered notification events for device " .. proxyDeviceId)
     else
-        print("[Frigate Camera] RegisterEvents returned: " .. tostring(result))
+        log(LOG_WARNING, "RegisterEvents returned: " .. tostring(result))
     end
 end
 
@@ -479,7 +524,7 @@ end
 ------------------------------------------------------------------------
 
 function UIRequest(sCommand, tParams)
-    print("[Frigate Camera] UIRequest: " .. tostring(sCommand))
+    log(LOG_DEBUG, "UIRequest: " .. tostring(sCommand))
     if sCommand == "GET_STREAM_URLS" then
         return getStreamURLs(tParams)
     end
@@ -566,20 +611,19 @@ local function checkCameraHealth()
     local snapshotURL = "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
     local mjpegURL = "http://" .. host .. ":" .. PORT_HTTP .. "/api/stream.mjpeg?src=" .. (streamName() or cam)
 
-    print("[Frigate Camera] Health check: " .. snapshotURL)
+    log(LOG_DEBUG, "Health check: " .. snapshotURL)
 
     C4:urlGet(snapshotURL, {}, false, function(ticketId, strData, responseCode, tHeaders, strError)
         if responseCode == 200 and (not strError or strError == "") then
             setStatus("Online — " .. cam)
-            print("[Frigate Camera] " .. cam .. " snapshot OK (HTTP 200, " .. tostring(#(strData or "")) .. " bytes)")
+            log(LOG_INFO, cam .. " snapshot OK (HTTP 200, " .. tostring(#(strData or "")) .. " bytes)")
         else
             local err = (strError and strError ~= "") and strError or ("HTTP " .. tostring(responseCode))
             setStatus("Offline — " .. cam .. " (" .. err .. ")")
-            print("[Frigate Camera] " .. cam .. " snapshot FAILED: " .. err)
+            log(LOG_ERROR, cam .. " snapshot FAILED: " .. err)
         end
 
-        -- Also test MJPEG endpoint (just check if it responds, don't download the stream)
-        print("[Frigate Camera] Health check MJPEG: " .. mjpegURL)
+        log(LOG_DEBUG, "Health check MJPEG: " .. mjpegURL)
     end)
 end
 
@@ -599,7 +643,7 @@ local function updateProxy()
         C4:SendToProxy(PROXY_ID, "AUTHENTICATION_REQUIRED_CHANGED", { REQUIRED = "False" })
         C4:SendToProxy(PROXY_ID, "DEFAULT_AUTHENTICATION_REQUIRED_CHANGED", { REQUIRED = "False" })
         C4:SendToProxy(PROXY_ID, "STREAM_URLS_READY", {})
-        print("[Frigate Camera] Proxy updated: " .. host .. ":" .. PORT_HTTP .. "/" .. PORT_RTSP .. " / " .. cam)
+        log(LOG_INFO, "Proxy updated: " .. host .. ":" .. PORT_HTTP .. "/" .. PORT_RTSP .. " / " .. cam)
 
         -- Run health check to verify streams are reachable
         checkCameraHealth()
@@ -617,7 +661,7 @@ function ExecuteCommand(sCommand, tParams)
         if tParams then
             local cam = tParams.camera_name or "(unknown)"
             local sub = tParams.use_sub_stream or "(nil)"
-            print("[Frigate Camera] SET_FRIGATE_CONFIG: cam=" .. cam .. " sub=" .. sub .. " host=" .. (tParams.host or ""))
+            log(LOG_DEBUG, "SET_FRIGATE_CONFIG: cam=" .. cam .. " sub=" .. sub .. " host=" .. (tParams.host or ""))
             if tParams.host and tParams.host ~= "" then
                 C4:UpdateProperty(PROP_HOST, tParams.host)
             end

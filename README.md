@@ -269,7 +269,7 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Object Detected** | Any object detected (generic catch-all) |
 | **Object Left** | An object type's count drops to zero |
 | **Motion Detected** | Motion is detected |
-| **Motion Not Detected** | Motion ends |
+| **Motion Stopped** | Motion ends |
 | **Zone Entered** | An object enters a configured detection zone |
 | **Zone Exited** | All objects of a type leave a zone |
 | **Loitering Detected** | An object stays in a zone beyond the configured time limit |
@@ -428,8 +428,8 @@ The NVR driver automatically subscribes to these Frigate MQTT topics:
 | `frigate/<camera>/motion` | Motion `ON` / `OFF` per camera |
 | `frigate/<camera>/<zone>/<object>` | Object count per zone (for zone enter/exit) |
 | `frigate/<camera>/audio/<type>` | Audio detection events (speech, bark, scream, etc.) |
-| `frigate/<camera>/detect/set` | Detection enable/disable state changes |
-| `frigate/<camera>/recordings/set` | Recording enable/disable state changes |
+| `frigate/<camera>/detect/state` | Detection enable/disable state changes |
+| `frigate/<camera>/recordings/state` | Recording enable/disable state changes |
 | `frigate/events` | Full event JSON (used for loitering detection) |
 
 No MQTT configuration is needed on the Frigate side — these topics are published by default when MQTT is enabled in Frigate.
@@ -448,23 +448,28 @@ No MQTT configuration is needed on the Frigate side — these topics are publish
 | **Discover finds 0 cameras** | Frigate config has no cameras | Verify `http://<ip>:5000/api/config` returns camera data in a browser |
 | **No video on touchscreen** | MJPEG stream not reachable | Test in browser: `http://<frigate-ip>:5000/api/<camera_name>` |
 | **No video on mobile app** | RTSP 404 (no active go2rtc source) | Frigate's ffmpeg must pull through go2rtc, not directly from cameras. See [Streaming Requirement](#frigate-streaming-requirement--cameras-must-route-through-go2rtc) above. |
-| **No detection events** | MQTT not connected or camera not tracked | Verify MQTT Status = "Connected". Check that the camera name appears in Managed Cameras. |
-| **Events firing but no history** | Camera driver not receiving events | Re-run **Synchronize Cameras with Frigate** to refresh the camera-to-device mapping |
+| **Frigate Status: "Frigate unavailable (MQTT)"** | MQTT availability message missed | Wait up to 60 seconds — the driver auto-recovers via periodic health check. Or click **Check Frigate Status**. |
+| **No detection events** | MQTT not connected or camera not tracked | Verify MQTT Status = "Connected". Check that the camera name appears in Managed Cameras. If **Unmatched Cameras** shows names, run **Synchronize Cameras with Frigate**. |
+| **Events firing but programming doesn't trigger** | Camera driver not receiving events | Re-run **Synchronize Cameras with Frigate** to refresh the camera-to-device mapping |
 | **RTSP Camera Test fails** | HEVC sub-streams or go2rtc not active | Expected for H.265 cameras. Video still works via MJPEG. For RTSP, configure sub-streams as H.264. |
 | **Camera shows "Not Configured"** | Properties not set | Run **Synchronize Cameras with Frigate** from the NVR driver, or manually enter Frigate Host and Camera Name. |
 | **Door station / single-stream camera not working** | Sub-stream doesn't exist | Run **Synchronize** — the driver auto-detects single-stream cameras. Or manually set **Use Sub Stream** to **No** on that camera. |
 
 ### Debugging
 
-Both drivers support configurable logging. On the NVR driver, set these in Advanced Properties:
+Both drivers support configurable logging via **Log Mode** and **Log Level** properties:
 
 | Property | Setting | Effect |
 |----------|---------|--------|
 | **Log Mode** | `Print` | Output appears in the **Lua** tab in Composer |
-| **Log Level** | `4 - Debug` | Shows MQTT messages, API calls, camera config |
-| **Log Level** | `5 - Trace` | Shows every MQTT message payload (verbose) |
+| **Log Mode** | `Log` | Output goes to the controller's system log |
+| **Log Mode** | `Print and Log` | Both |
+| **Log Level** | `4 - Debug` | Shows MQTT messages, event firing, API calls, camera config |
+| **Log Level** | `5 - Trace` | Shows every MQTT message payload including audio (verbose) |
 
 Set Log Mode back to `Off` when done — logging adds overhead.
+
+> **Tip:** When debugging event flow, set both the NVR and the specific camera driver to Debug + Print. The NVR Lua tab shows MQTT receipt and routing, the camera Lua tab shows event processing and firing.
 
 ---
 
@@ -534,7 +539,7 @@ The driver defaults to using sub-streams (`<camera>_sub`). If a camera has no su
 Yes. Load the updated `.c4z` files, then delete the old NVR driver and add a new one. On startup, the new NVR driver automatically adopts orphan camera drivers from the previous instance, preserving their room assignments. You can also manually run **Create / Relink Cameras** to trigger adoption.
 
 **How do I enable debug logging?**
-On the NVR driver, set **Log Mode** to `Print` and **Log Level** to `4 - Debug`. Then check the **Lua** tab in Composer Pro to see MQTT messages, API calls, and camera configuration details.
+On either driver, set **Log Mode** to `Print` and **Log Level** to `4 - Debug`. Then check the **Lua** tab in Composer Pro. For tracing event flow end-to-end, enable debug on both the NVR driver and the specific camera driver.
 
 ---
 

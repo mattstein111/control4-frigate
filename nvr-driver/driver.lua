@@ -42,6 +42,7 @@ local PROP_MQTT_STATUS   = "MQTT Status"
 local PROP_FRIGATE_COUNT = "Cameras in Frigate"
 local PROP_C4_COUNT      = "Cameras in Control4"
 local PROP_MANAGED       = "Managed Cameras"
+local PROP_UNMATCHED     = "Unmatched Cameras"
 local PROP_LOG_LEVEL   = "Log Level"
 local PROP_LOG_MODE    = "Log Mode"
 
@@ -57,9 +58,16 @@ local mqttClient = nil
 -- Track previous object counts to detect new vs update events
 local prevCounts = {}  -- { "camera/object" = count }
 
+-- Track camera names seen via MQTT that aren't in managed_cameras
+local unmatchedCameras = {}  -- { camera_name = true }
+
 -- Reconnect timer
 local MQTT_RECONNECT_TIMER = nil
 local MQTT_RECONNECT_INTERVAL = 30  -- seconds
+
+-- Periodic health-check timer (recovers Frigate Status if MQTT availability msg missed)
+local HEALTH_CHECK_TIMER = nil
+local HEALTH_CHECK_INTERVAL = 60  -- seconds
 
 -- Log levels
 local LOG_FATAL   = 0
@@ -138,6 +146,8 @@ local function setStatus(msg)
     C4:UpdateProperty(PROP_STATUS, msg)
 end
 
+local mqttConnected = false
+
 local function setMQTTStatus(msg)
     C4:UpdateProperty(PROP_MQTT_STATUS, msg)
 end
@@ -171,11 +181,33 @@ local function deviceIdForCamera(camName)
     return nil
 end
 
+--- Update the Unmatched Cameras property display.
+local function updateUnmatchedDisplay()
+    local names = {}
+    for name, _ in pairs(unmatchedCameras) do
+        table.insert(names, name)
+    end
+    table.sort(names)
+    C4:UpdateProperty(PROP_UNMATCHED, #names > 0 and table.concat(names, ", ") or "")
+end
+
 --- Send a command to a camera driver instance.
 local function sendToCamera(camName, command, params)
     local devId = deviceIdForCamera(camName)
     if devId then
+        -- Clear from unmatched if it was previously unmatched
+        if unmatchedCameras[camName] then
+            unmatchedCameras[camName] = nil
+            updateUnmatchedDisplay()
+        end
         C4:SendToDevice(devId, command, params)
+        log(LOG_DEBUG, "Sent " .. command .. " to " .. tostring(camName) .. " (device " .. devId .. ")")
+    else
+        if not unmatchedCameras[camName] then
+            unmatchedCameras[camName] = true
+            updateUnmatchedDisplay()
+            log(LOG_WARNING, "No device ID for camera '" .. tostring(camName) .. "' — events will be dropped until synced")
+        end
     end
 end
 
@@ -252,7 +284,10 @@ function handleEventJSON(payload)
     local label = jsonString(payload, "label")
     local loitering = jsonBool(payload, "loitering")
 
-    if not camera then return end
+    if not camera then
+        log(LOG_DEBUG, "Event JSON missing 'camera' field — discarding")
+        return
+    end
 
     local zonesStr = payload:match('"current_zones"%s*:%s*%[([^%]]*)%]')
     local zones = {}
@@ -287,8 +322,10 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
         for camName, _ in pairs(managed) do
             sendToCamera(camName, "FRIGATE_HEALTH", { online = online })
         end
-        if not online then
-            -- Only update Frigate Status if Frigate goes DOWN — preserves the API version info
+        if online then
+            -- Frigate came back — refresh status via REST to get version info
+            checkStatus()
+        else
             setStatus("Frigate unavailable (MQTT)")
         end
         log(LOG_INFO, "Frigate available: " .. tostring(payload))
@@ -321,7 +358,7 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
         if val > 0 then
             local audioType = segments[4]
             sendToCamera(camName, "FRIGATE_AUDIO", { audio_type = audioType })
-            log(LOG_DEBUG, "Audio: " .. audioType .. " on " .. camName)
+            log(LOG_TRACE, "Audio: " .. audioType .. " on " .. camName)
         end
         return
     end
@@ -387,6 +424,7 @@ local function connectMQTT()
     if mqttClient then
         mqttClient:Disconnect()
         mqttClient = nil
+        mqttConnected = false
     end
 
     local mqttHost = Properties[PROP_MQTT_HOST] or ""
@@ -425,6 +463,7 @@ local function connectMQTT()
     -- Set callbacks using C4:MQTT() API style
     mqttClient:OnConnect(function(obj, reasonCode, flags, message)
         if reasonCode == 0 then
+            mqttConnected = true
             setMQTTStatus("Connected")
             log(LOG_INFO, "MQTT connected")
 
@@ -443,15 +482,22 @@ local function connectMQTT()
             end
             setMQTTStatus("Connect failed: " .. reason)
             log(LOG_ERROR, "MQTT connect failed: " .. reason)
+            -- Schedule retry on connect failure (not just disconnect)
+            if not MQTT_RECONNECT_TIMER then
+                MQTT_RECONNECT_TIMER = C4:AddTimer(MQTT_RECONNECT_INTERVAL, "SECONDS", false)
+                log(LOG_INFO, "Scheduled MQTT reconnect in " .. MQTT_RECONNECT_INTERVAL .. "s")
+            end
         end
     end)
 
     mqttClient:OnDisconnect(function(obj, reasonCode)
+        mqttConnected = false
         setMQTTStatus("Disconnected")
         log(LOG_WARNING, "MQTT disconnected (reason: " .. tostring(reasonCode) .. ")")
 
         if not MQTT_RECONNECT_TIMER then
             MQTT_RECONNECT_TIMER = C4:AddTimer(MQTT_RECONNECT_INTERVAL, "SECONDS", false)
+            log(LOG_INFO, "Scheduled MQTT reconnect in " .. MQTT_RECONNECT_INTERVAL .. "s")
         end
     end)
 
@@ -554,7 +600,10 @@ local function autoPopulateMQTT()
 
     local url = base .. "/api/config"
     C4:urlGet(url, apiHeaders(), false, function(ticketId, strData, responseCode, tHeaders, strError)
-        if responseCode ~= 200 or not strData then return end
+        if responseCode ~= 200 or not strData then
+            log(LOG_WARNING, "Failed to auto-populate MQTT broker: HTTP " .. tostring(responseCode))
+            return
+        end
 
         local host = jsonString(strData, "host")
         local port = jsonNumber(strData, "port")
@@ -643,7 +692,10 @@ local function handleAdoptResponse(tParams)
     local camName = tParams and tParams.camera_name or ""
     local devId = tParams and tonumber(tParams.device_id) or nil
 
-    if camName == "" or not devId then return end
+    if camName == "" or not devId then
+        log(LOG_WARNING, "Invalid ADOPT_RESPONSE: camName=" .. tostring(camName) .. " devId=" .. tostring(devId))
+        return
+    end
 
     local managed = getManagedCameras()
     if managed[camName] then
@@ -746,6 +798,10 @@ local function discoverCameras()
             end
         end
 
+        -- Clear unmatched list since managed cameras may have changed
+        unmatchedCameras = {}
+        updateUnmatchedDisplay()
+
         local msg = "Discovery complete — " .. added .. " added, " .. skipped .. " existing"
         setStatus(msg)
         log(LOG_INFO, msg)
@@ -829,6 +885,13 @@ function OnTimerExpired(timerId)
         MQTT_RECONNECT_TIMER = nil
         log(LOG_INFO, "MQTT reconnect timer fired")
         connectMQTT()
+    elseif timerId == HEALTH_CHECK_TIMER then
+        log(LOG_DEBUG, "Health check timer fired")
+        checkStatus()
+        if not mqttConnected then
+            log(LOG_INFO, "MQTT not connected — reconnecting from health check")
+            connectMQTT()
+        end
     end
 end
 
@@ -861,6 +924,10 @@ function ExecuteCommand(sCommand, tParams)
         removeAllCameras()
     elseif cmd == "CheckStatus" then
         checkStatus()
+        if not mqttConnected then
+            log(LOG_INFO, "MQTT not connected — reconnecting as part of status check")
+            connectMQTT()
+        end
     elseif cmd == "ReconnectMQTT" then
         connectMQTT()
     elseif cmd == "AdoptCameras" then
@@ -906,6 +973,10 @@ function OnDriverLateInit()
     checkStatus()
     refreshFrigateCameraCount()
     connectMQTT()
+
+    -- Start periodic health check so status self-corrects if MQTT availability msg is missed
+    HEALTH_CHECK_TIMER = C4:AddTimer(HEALTH_CHECK_INTERVAL, "SECONDS", true)
+    log(LOG_INFO, "Started health check timer (" .. HEALTH_CHECK_INTERVAL .. "s)")
 end
 
 function OnDriverDestroyed()
@@ -916,5 +987,9 @@ function OnDriverDestroyed()
     if MQTT_RECONNECT_TIMER then
         C4:KillTimer(MQTT_RECONNECT_TIMER)
         MQTT_RECONNECT_TIMER = nil
+    end
+    if HEALTH_CHECK_TIMER then
+        C4:KillTimer(HEALTH_CHECK_TIMER)
+        HEALTH_CHECK_TIMER = nil
     end
 end
