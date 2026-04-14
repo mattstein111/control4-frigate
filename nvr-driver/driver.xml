@@ -5,8 +5,8 @@
   <name>Frigate NVR</name>
   <model>Frigate NVR Controller</model>
   <created>2026-03-31</created>
-  <modified>2026-04-12</modified>
-  <version>38</version>
+  <modified>2026-04-14</modified>
+  <version>39</version>
 
   <small image_source="c4z">icons/device_sm.png</small>
   <large image_source="c4z">icons/device_lg.png</large>
