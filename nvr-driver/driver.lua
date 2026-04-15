@@ -64,7 +64,7 @@ local PERSIST_LAST_INSTALL = "last_install_attempt"
 
 -- Current release tag for this driver build. Bumped per release alongside <version>.
 -- Used as the comparison baseline for the update checker.
-local DRIVER_RELEASE  = "v0.8.9-beta"
+local DRIVER_RELEASE  = "v0.8.10-beta"
 
 -- GitHub repo for auto-update checks
 local UPDATE_REPO     = "mattstein111/control4-frigate"

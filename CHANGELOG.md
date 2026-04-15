@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.10-beta] - 2026-04-15
+
+### Changed
+
+- No code changes — smoke-test release for the self-install auto-updater shipped in v0.8.9-beta. NVR driver bumped to v42, camera driver bumped to v37 so Director will actually hot-reload them when the installed driver pulls this release.
+
 ## [0.8.9-beta] - 2026-04-14
 
 ### Changed
