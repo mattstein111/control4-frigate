@@ -53,9 +53,18 @@ local PROP_UPDATE_URL    = "Update Download URL"
 -- The camera driver filename (must be loaded on the controller)
 local CAMERA_DRIVER   = "frigate-camera.c4z"
 
+-- This driver's own .c4z filename — used by the auto-installer to write
+-- the downloaded release into C4Z_ROOT under the right name.
+local NVR_DRIVER_FILENAME = "frigate-nvr.c4z"
+
+-- Persist key for anti-loop guard: timestamp of last self-install attempt.
+-- If init runs within 5 min of an attempt AND we're still on the same version,
+-- skip the auto-update check so a failing install can't loop.
+local PERSIST_LAST_INSTALL = "last_install_attempt"
+
 -- Current release tag for this driver build. Bumped per release alongside <version>.
 -- Used as the comparison baseline for the update checker.
-local DRIVER_RELEASE  = "v0.8.7-beta"
+local DRIVER_RELEASE  = "v0.8.9-beta"
 
 -- GitHub repo for auto-update checks
 local UPDATE_REPO     = "mattstein111/control4-frigate"
@@ -949,14 +958,147 @@ local function selectRelease(body, channel)
             -- so a forward window from tag_name picks up the next release's
             -- author html_url instead.
             local htmlUrl = "https://github.com/" .. UPDATE_REPO .. "/releases/tag/" .. tag
+            -- Walk the assets array within this release window and collect
+            -- browser_download_url values keyed by asset name.
+            local assets = {}
+            local assetsStart = window:find('"assets"%s*:%s*%[', 1, false)
+            if assetsStart then
+                local assetsBlock = window:sub(assetsStart)
+                for chunk in assetsBlock:gmatch("(%b{})") do
+                    local n = chunk:match('"name"%s*:%s*"([^"]+)"')
+                    local u = chunk:match('"browser_download_url"%s*:%s*"([^"]+)"')
+                    if n and u then assets[n] = u end
+                end
+            end
             return {
                 tag = tag,
                 prerelease = prerelease,
                 html_url = htmlUrl,
+                assets = assets,
             }
         end
         pos = nextTagStart
     end
+end
+
+local function recentInstallAttempt()
+    local val = C4:PersistGetValue(PERSIST_LAST_INSTALL)
+    local ts = tonumber(val)
+    if not ts then return false end
+    return (os.time() - ts) < 300
+end
+
+local function recordInstallAttempt()
+    C4:PersistSetValue(PERSIST_LAST_INSTALL, tostring(os.time()))
+end
+
+--- Send the local Director SOAP envelope that triggers a hot-reload of a
+--- .c4z sitting in C4Z_ROOT. See c4-conventions §3.
+local function sendInstallSoap(filename)
+    local client = C4:CreateTCPClient()
+    client:OnConnect(function(cli)
+        local soap = string.format(
+            '<c4soap name="UpdateProjectC4i" session="0" operation="RWX" category="composer" async="0">'
+            .. '<param name="name" type="string">%s</param></c4soap>\0',
+            filename)
+        cli:Write(soap)
+        cli:Close()
+        log(LOG_INFO, "Install SOAP sent for " .. filename)
+    end)
+    client:OnError(function(cli, errCode, errMsg)
+        log(LOG_ERROR, string.format("Install SOAP error %s: %s for %s",
+            tostring(errCode), tostring(errMsg), filename))
+        cli:Close()
+    end)
+    client:Connect("127.0.0.1", 5020)
+end
+
+--- Write `body` to `filename` in C4Z_ROOT. Caller must have invoked the
+--- shared-secret FileSetDir handshake from OnDriverLateInit first.
+local function writeC4zToRoot(filename, body)
+    local okSetDir, errSetDir = pcall(function() C4:FileSetDir("C4Z_ROOT") end)
+    if not okSetDir then
+        log(LOG_ERROR, "FileSetDir(C4Z_ROOT) failed: " .. tostring(errSetDir))
+        return false
+    end
+    if C4:FileExists(filename) then
+        pcall(function() C4:FileDelete(filename) end)
+    end
+    local okOpen, fileId = pcall(function() return C4:FileOpen(filename) end)
+    if not (okOpen and type(fileId) == "number" and fileId ~= -1) then
+        log(LOG_ERROR, string.format("FileOpen(%s) failed: ok=%s id=%s",
+            filename, tostring(okOpen), tostring(fileId)))
+        return false
+    end
+    pcall(function() C4:FileSetPos(fileId, 0) end)
+    local okWrite, errWrite = pcall(function() C4:FileWrite(fileId, #body, body) end)
+    pcall(function() C4:FileClose(fileId) end)
+    if not okWrite then
+        log(LOG_ERROR, "FileWrite failed for " .. filename .. ": " .. tostring(errWrite))
+        return false
+    end
+    return true
+end
+
+--- Download a release asset and write it to C4Z_ROOT. cb(success) on completion.
+local function downloadAsset(filename, url, cb)
+    log(LOG_INFO, "Downloading " .. filename .. " from " .. url)
+    local headers = {
+        ["User-Agent"] = "control4-frigate-driver/" .. DRIVER_RELEASE,
+        ["Accept"]     = "application/octet-stream",
+    }
+    C4:urlGet(url, headers, false, function(ticketId, strData, responseCode, tHeaders, strError)
+        if strError and strError ~= "" then
+            log(LOG_ERROR, "Download failed for " .. filename .. ": " .. tostring(strError))
+            return cb(false)
+        end
+        -- GitHub's release CDN returns 302 → final body; urlGet surfaces the
+        -- initial code but follows the redirect. Accept 2xx/3xx + verify zip.
+        local httpOk = type(responseCode) == "number" and responseCode >= 200 and responseCode < 400
+        local n = strData and #strData or 0
+        local looksZip = n >= 4 and strData:sub(1, 4) == "PK\3\4"
+        if not (httpOk and looksZip) then
+            log(LOG_ERROR, string.format("Download %s rejected: status=%s bytes=%d zip=%s",
+                filename, tostring(responseCode), n, tostring(looksZip)))
+            return cb(false)
+        end
+        log(LOG_INFO, string.format("Downloaded %s: %d bytes (http %s)",
+            filename, n, tostring(responseCode)))
+        if not writeC4zToRoot(filename, strData) then return cb(false) end
+        cb(true)
+    end)
+end
+
+--- Download both .c4z assets, then install camera first and NVR last.
+--- The NVR install will reload this driver's Lua VM, so it must be the last
+--- SOAP we send. Records an install-attempt timestamp before triggering.
+local function downloadAndInstall(rel)
+    local nvrUrl    = rel.assets and rel.assets[NVR_DRIVER_FILENAME]
+    local cameraUrl = rel.assets and rel.assets[CAMERA_DRIVER]
+    if not (nvrUrl and cameraUrl) then
+        log(LOG_WARNING, string.format(
+            "Release %s missing required assets — nvr=%s camera=%s; skipping install",
+            rel.tag, tostring(nvrUrl ~= nil), tostring(cameraUrl ~= nil)))
+        return
+    end
+
+    downloadAsset(CAMERA_DRIVER, cameraUrl, function(camOk)
+        if not camOk then
+            log(LOG_ERROR, "Aborting install — camera download/write failed")
+            return
+        end
+        downloadAsset(NVR_DRIVER_FILENAME, nvrUrl, function(nvrOk)
+            if not nvrOk then
+                log(LOG_ERROR, "Aborting install — NVR download/write failed (camera was already staged)")
+                return
+            end
+            recordInstallAttempt()
+            -- Install camera first, then NVR. The NVR SOAP triggers our own
+            -- reload, so it must be last.
+            sendInstallSoap(CAMERA_DRIVER)
+            sendInstallSoap(NVR_DRIVER_FILENAME)
+        end)
+    end)
 end
 
 --- Poll GitHub Releases and update the three read-only update properties.
@@ -1012,6 +1154,14 @@ function checkForUpdates(silent, channelOverride)
             log(LOG_INFO, string.format(
                 "Update available: %s (installed %s). Download: %s",
                 rel.tag, DRIVER_RELEASE, dl))
+            -- Auto-install when the configured channel (not the manual probe
+            -- override) is on. Manual "Check for Updates Now" while Auto Update
+            -- is Off only reports availability; it does not install.
+            local configuredChannel = Properties[PROP_AUTO_UPDATE] or "Off"
+            if configuredChannel ~= "Off" then
+                log(LOG_INFO, "Auto-installing " .. rel.tag)
+                downloadAndInstall(rel)
+            end
         else
             C4:UpdateProperty(PROP_UPDATE_URL, "")
             if not silent then
@@ -1143,6 +1293,11 @@ local function refreshFrigateCameraCount()
 end
 
 function OnDriverLateInit()
+    -- Shared-secret handshake that unlocks C4:FileSetDir for C4Z_ROOT etc. on
+    -- unsigned community drivers (see c4-conventions §3a). Must precede any
+    -- file ops in C4Z_ROOT done by the auto-installer.
+    pcall(function() C4:FileSetDir("c29tZXNwZWNpYWxrZXk=++11") end)
+
     C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "27")
     C4:UpdateProperty(PROP_DRIVER_RELEASE, DRIVER_RELEASE)
     log(LOG_INFO, "Driver initializing — release " .. DRIVER_RELEASE)
@@ -1157,9 +1312,16 @@ function OnDriverLateInit()
     log(LOG_INFO, "Started health check timer (" .. HEALTH_CHECK_INTERVAL .. "s)")
 
     -- Start update-check timer (silent by design when Auto Update is Off) and
-    -- run an initial poll so property values populate immediately.
+    -- run an initial poll so property values populate immediately. Skip the
+    -- initial poll if we just attempted a self-install — guards against an
+    -- install that fails in a way that leaves the same version running, which
+    -- would otherwise re-attempt the install on every restart.
     startUpdateCheckTimer()
-    checkForUpdates(true)
+    if recentInstallAttempt() then
+        log(LOG_WARNING, "Skipping initial update check — install attempted within the last 5 min. Use Check for Updates Now to retry manually.")
+    else
+        checkForUpdates(true)
+    end
 end
 
 function OnDriverDestroyed()

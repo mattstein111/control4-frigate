@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.9-beta] - 2026-04-14
+
+### Changed
+
+- NVR driver bumped to v41, camera driver bumped to v36 (both drivers must be installed to get auto-update).
+
+- **`Auto Update` is now self-installing.** When set to `Beta` or `Release`, the NVR driver downloads both `frigate-nvr.c4z` and `frigate-camera.c4z` from the matched GitHub release, writes them to `C4Z_ROOT`, and asks Director to hot-reload them — no Composer required. Set to `Off` to disable. The `Check for Updates Now` action while `Off` still only reports availability and never installs.
+  - Camera driver is installed first, then NVR (NVR install reloads its own Lua VM).
+  - Anti-loop guard: if a self-install was attempted in the last 5 min and the driver booted on the same version (i.e. the install didn't take), the initial poll is skipped — use `Check for Updates Now` to retry manually.
+  - Releases must ship both `frigate-nvr.c4z` and `frigate-camera.c4z` as assets; if either is missing, install is skipped and a warning is logged.
+  - Mechanism: shared-secret `FileSetDir` handshake (c4-conventions §3a) plus `UpdateProjectC4i` SOAP envelope to `127.0.0.1:5020` (§3). Validated end-to-end in control4-mqttmirror v0.9.1.8 → v0.9.1.9.
+
 ## [0.8.8-beta] - 2026-04-15
 
 ### Added
