@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.7-beta] - 2026-04-14
+
+### Fixed
+
+- Driver icon read "wide" in Composer's driver list (#18) — device icons resized to the canonical Control4 slot sizes (`device_lg.png` 32×32, `device_sm.png` 16×16). Oversized source PNGs were being downscaled by the host with visible aspect distortion.
+
+### Added
+
+- Full `experience_*.png` icon ladder (sizes 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 300, 512, 1024) so Navigator / end-user surfaces pick density-matched icons instead of scaling from the two device PNGs.
+- Padded wrapper SVG (`icon_padded.svg`) in the repo so future icon regenerations stay vector-crisp and consistently padded.
+
+### Changed
+
+- NVR driver bumped to v39.
+- CI: `release.yml` auto-marks `-beta`/`-rc`/`-alpha` tags as GitHub prereleases so they don't ship to the future `Release` autoupdate channel (#3).
+
 ## [0.8.5-beta] - 2026-04-06
 
 ### Fixed

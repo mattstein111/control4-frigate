@@ -20,3 +20,4 @@ jobs:
         with:
           files: dist/*.c4z
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
