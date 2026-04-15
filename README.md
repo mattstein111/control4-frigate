@@ -273,6 +273,24 @@ Manual trigger available in the Actions tab. When **Auto Update** is `Off`, it p
 - Camera accessible from the room where it's assigned
 - Standard Control4 camera viewer UI
 
+### Audio — Not Currently Supported
+
+**In-stream audio playback does not currently work in the Control4 app**, even when cameras output a Control4-compatible codec. This is a known limitation of this driver's current integration path with Frigate/go2rtc — not a bug in your setup.
+
+**What we confirmed during investigation** (v0.8.11-beta):
+
+- Control4 OS 3.4.2+ supports camera audio, and the required codec is **G.711 μ-law (PCMU) at 8 kHz** (per Control4's Camera Agent specification — G.711 A-law / PCMA and AAC are not supported).
+- go2rtc can transcode any camera's audio to PCMU/8000 via `#audio=pcmu` in the source definition.
+- After transcoding, VLC and ffmpeg play the go2rtc-served audio correctly, confirming the stream is well-formed PCMU.
+- The Control4 iOS app displays the audio icon on the camera tile (so Navigator is parsing the SDP and recognizing the audio track)…
+- …but no sound is rendered during live view.
+
+**Suspected cause:** go2rtc's RTSP server emits PCMU on dynamic RTP payload type 97 with an `a=rtpmap:97 PCMU/8000` declaration, rather than the RFC 3551 static payload type 0. VLC and ffmpeg honor the rtpmap; Control4's RTSP client appears to not, silently dropping the audio packets it can't map to a known codec. The `a=recvonly` direction attribute go2rtc adds to the SDP may also play a role, though the icon's appearance suggests Navigator parsed past that fine.
+
+We don't yet have a workaround. Possible future paths: relay go2rtc's output through MediaMTX (which uses static PT 0 for PCMU), point the driver at camera native RTSP URLs that emit PCMU with static PT 0 (only works for cameras without unusual digest auth), or have Control4 fix their RTSP client's handling of dynamic PT for G.711.
+
+The audio-detection events (Speech / Bark / Scream / etc.) are unaffected — those flow via MQTT and work correctly regardless of live-audio playback.
+
 ### In the Control4 App History
 Every detection event is logged with a timestamp:
 - *"Person detected"*
