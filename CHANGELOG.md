@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.8-beta] - 2026-04-15
+
+### Added
+
+- **Auto-update notifications** (#3) — NVR driver now polls GitHub Releases once daily and surfaces available updates via read-only properties and a log line. **Notification-only by design** — self-install is blocked on unsigned community drivers in OS 3.4+ (see shared `c4-conventions.md` §3a), so updates must still be installed manually via Composer.
+  - New `Auto Update` dropdown — `Off` (default), `Beta` (prereleases + releases), `Release` (stable releases only).
+  - New read-only properties: `Driver Release` (current tag), `Latest Available Version`, `Update Download URL`.
+  - New action `Check for Updates Now` — manual trigger works regardless of the dropdown value; when `Off`, probes the `Release` channel.
+  - When a newer release is detected, logs `Update available: <tag>. Download: <url>` at INFO level.
+
+### Changed
+
+- NVR driver bumped to v40.
+
 ## [0.8.7-beta] - 2026-04-14
 
 ### Fixed

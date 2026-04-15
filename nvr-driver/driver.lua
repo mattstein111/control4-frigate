@@ -45,9 +45,20 @@ local PROP_MANAGED       = "Managed Cameras"
 local PROP_UNMATCHED     = "Unmatched Cameras"
 local PROP_LOG_LEVEL   = "Log Level"
 local PROP_LOG_MODE    = "Log Mode"
+local PROP_AUTO_UPDATE   = "Auto Update"
+local PROP_DRIVER_RELEASE = "Driver Release"
+local PROP_LATEST        = "Latest Available Version"
+local PROP_UPDATE_URL    = "Update Download URL"
 
 -- The camera driver filename (must be loaded on the controller)
 local CAMERA_DRIVER   = "frigate-camera.c4z"
+
+-- Current release tag for this driver build. Bumped per release alongside <version>.
+-- Used as the comparison baseline for the update checker.
+local DRIVER_RELEASE  = "v0.8.7-beta"
+
+-- GitHub repo for auto-update checks
+local UPDATE_REPO     = "mattstein111/control4-frigate"
 
 -- Persistence keys
 local PERSIST_CAMERAS = "managed_cameras"
@@ -68,6 +79,10 @@ local MQTT_RECONNECT_INTERVAL = 30  -- seconds
 -- Periodic health-check timer (recovers Frigate Status if MQTT availability msg missed)
 local HEALTH_CHECK_TIMER = nil
 local HEALTH_CHECK_INTERVAL = 60  -- seconds
+
+-- Periodic update-check timer (GitHub releases poll; notification-only, no self-install)
+local UPDATE_CHECK_TIMER = nil
+local UPDATE_CHECK_INTERVAL = 24 * 60 * 60  -- 24 hours in seconds
 
 -- Log levels
 local LOG_FATAL   = 0
@@ -877,6 +892,154 @@ local function reconcileCameras()
 end
 
 ------------------------------------------------------------------------
+-- Auto-update check (notification-only — see c4-conventions §3a)
+------------------------------------------------------------------------
+
+--- Parse a semver-ish tag like "v0.8.7-beta" into {major, minor, patch, suffix}.
+local function parseVersion(tag)
+    if not tag or tag == "" then return nil end
+    tag = tag:gsub("^v", "")
+    local core, suffix = tag:match("^([%d%.]+)(.*)$")
+    if not core then return nil end
+    suffix = suffix:gsub("^%-", "")
+    local parts = {}
+    for n in core:gmatch("(%d+)") do
+        table.insert(parts, tonumber(n))
+    end
+    while #parts < 3 do table.insert(parts, 0) end
+    return { parts[1], parts[2], parts[3], suffix ~= "" and suffix or nil }
+end
+
+--- Returns -1 / 0 / 1 for a < b / a == b / a > b. A release tag (no suffix)
+--- outranks a prerelease tag with the same numeric core (semver rule).
+local function compareVersions(a, b)
+    local va, vb = parseVersion(a), parseVersion(b)
+    if not va or not vb then return 0 end
+    for i = 1, 3 do
+        if va[i] < vb[i] then return -1 end
+        if va[i] > vb[i] then return 1 end
+    end
+    if va[4] == vb[4] then return 0 end
+    if va[4] == nil then return 1 end
+    if vb[4] == nil then return -1 end
+    if va[4] < vb[4] then return -1 end
+    if va[4] > vb[4] then return 1 end
+    return 0
+end
+
+--- Walk the GitHub releases JSON array and return the first release matching
+--- the channel. Releases are newest-first per the GitHub API default.
+--- Channel "Beta" includes prereleases; "Release" excludes them. Drafts are
+--- always skipped.
+local function selectRelease(body, channel)
+    local includePrerelease = (channel == "Beta")
+    local pos = 1
+    while true do
+        local tagStart, tagEnd, tag = body:find('"tag_name"%s*:%s*"([^"]+)"', pos)
+        if not tag then return nil end
+        local _, nextTagStart = body:find('"tag_name"%s*:', tagEnd)
+        nextTagStart = nextTagStart or (#body + 1)
+        local window = body:sub(tagEnd, nextTagStart)
+        local draft = window:match('"draft"%s*:%s*(%w+)') == "true"
+        local prerelease = window:match('"prerelease"%s*:%s*(%w+)') == "true"
+        if not draft and (includePrerelease or not prerelease) then
+            -- Construct the canonical release URL from repo + tag rather than
+            -- trying to locate the release's own html_url in the JSON — the
+            -- release's html_url sits before "tag_name" in GitHub's output,
+            -- so a forward window from tag_name picks up the next release's
+            -- author html_url instead.
+            local htmlUrl = "https://github.com/" .. UPDATE_REPO .. "/releases/tag/" .. tag
+            return {
+                tag = tag,
+                prerelease = prerelease,
+                html_url = htmlUrl,
+            }
+        end
+        pos = nextTagStart
+    end
+end
+
+--- Poll GitHub Releases and update the three read-only update properties.
+--- channelOverride lets the manual "Check for Updates Now" action probe even
+--- when Auto Update is Off; pass nil to use the dropdown value.
+--- silent = true suppresses the "no update" log line (used for timer polls).
+function checkForUpdates(silent, channelOverride)
+    local channel = channelOverride or Properties[PROP_AUTO_UPDATE] or "Off"
+    if channel == "Off" then
+        C4:UpdateProperty(PROP_LATEST, "")
+        C4:UpdateProperty(PROP_UPDATE_URL, "")
+        if not silent then
+            log(LOG_INFO, "Auto Update is Off — not checking")
+        end
+        return
+    end
+
+    local url = "https://api.github.com/repos/" .. UPDATE_REPO .. "/releases"
+    local headers = {
+        ["User-Agent"] = "control4-frigate-driver/" .. DRIVER_RELEASE,
+        ["Accept"]     = "application/vnd.github+json",
+    }
+
+    log(LOG_DEBUG, "Checking for updates — channel=" .. channel .. " current=" .. DRIVER_RELEASE)
+
+    C4:urlGet(url, headers, false, function(ticketId, strData, responseCode, tHeaders, strError)
+        if strError and strError ~= "" then
+            log(LOG_WARNING, "Update check failed: " .. tostring(strError))
+            return
+        end
+        if responseCode ~= 200 then
+            log(LOG_WARNING, "Update check HTTP " .. tostring(responseCode))
+            return
+        end
+        if not strData or strData == "" then
+            log(LOG_WARNING, "Update check returned empty body")
+            return
+        end
+
+        local rel = selectRelease(strData, channel)
+        if not rel then
+            log(LOG_INFO, "No matching release found on channel " .. channel)
+            C4:UpdateProperty(PROP_LATEST, "(none)")
+            C4:UpdateProperty(PROP_UPDATE_URL, "")
+            return
+        end
+
+        local cmp = compareVersions(DRIVER_RELEASE, rel.tag)
+        C4:UpdateProperty(PROP_LATEST, rel.tag)
+        if cmp < 0 then
+            local dl = rel.html_url
+            C4:UpdateProperty(PROP_UPDATE_URL, dl)
+            log(LOG_INFO, string.format(
+                "Update available: %s (installed %s). Download: %s",
+                rel.tag, DRIVER_RELEASE, dl))
+        else
+            C4:UpdateProperty(PROP_UPDATE_URL, "")
+            if not silent then
+                log(LOG_INFO, string.format(
+                    "Up to date — installed %s, latest on %s channel is %s",
+                    DRIVER_RELEASE, channel, rel.tag))
+            end
+        end
+    end)
+end
+
+--- Start the periodic update-check timer if a channel is selected.
+--- Safe to call repeatedly — replaces any existing timer.
+local function startUpdateCheckTimer()
+    if UPDATE_CHECK_TIMER then
+        C4:KillTimer(UPDATE_CHECK_TIMER)
+        UPDATE_CHECK_TIMER = nil
+    end
+    local channel = Properties[PROP_AUTO_UPDATE] or "Off"
+    if channel == "Off" then
+        log(LOG_DEBUG, "Auto Update Off — update check timer not started")
+        return
+    end
+    UPDATE_CHECK_TIMER = C4:AddTimer(UPDATE_CHECK_INTERVAL, "SECONDS", true)
+    log(LOG_INFO, "Started update check timer (" .. UPDATE_CHECK_INTERVAL .. "s, channel=" .. channel .. ")")
+end
+
+------------------------------------------------------------------------
 -- Timer Handler (MQTT reconnect)
 ------------------------------------------------------------------------
 
@@ -892,6 +1055,9 @@ function OnTimerExpired(timerId)
             log(LOG_INFO, "MQTT not connected — reconnecting from health check")
             connectMQTT()
         end
+    elseif timerId == UPDATE_CHECK_TIMER then
+        log(LOG_DEBUG, "Update check timer fired")
+        checkForUpdates(true)
     end
 end
 
@@ -932,6 +1098,13 @@ function ExecuteCommand(sCommand, tParams)
         connectMQTT()
     elseif cmd == "AdoptCameras" then
         adoptOrphanCameras()
+    elseif cmd == "CheckUpdates" then
+        -- Manual trigger — always runs, even when Auto Update is Off.
+        -- When Off, probe against the Release channel so users see what
+        -- stable release is available without enabling polling.
+        local channel = Properties[PROP_AUTO_UPDATE] or "Off"
+        if channel == "Off" then channel = "Release" end
+        checkForUpdates(false, channel)
     end
 end
 
@@ -951,6 +1124,10 @@ function OnPropertyChanged(sProperty)
     if sProperty == PROP_USER or sProperty == PROP_PASS then
         checkStatus()
     end
+    if sProperty == PROP_AUTO_UPDATE then
+        startUpdateCheckTimer()
+        checkForUpdates(false)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -967,7 +1144,8 @@ end
 
 function OnDriverLateInit()
     C4:UpdateProperty(PROP_VERSION, C4:GetDriverConfigInfo("version") or "27")
-    log(LOG_INFO, "Driver initializing")
+    C4:UpdateProperty(PROP_DRIVER_RELEASE, DRIVER_RELEASE)
+    log(LOG_INFO, "Driver initializing — release " .. DRIVER_RELEASE)
     reconcileCameras()
     adoptOrphanCameras()
     checkStatus()
@@ -977,6 +1155,11 @@ function OnDriverLateInit()
     -- Start periodic health check so status self-corrects if MQTT availability msg is missed
     HEALTH_CHECK_TIMER = C4:AddTimer(HEALTH_CHECK_INTERVAL, "SECONDS", true)
     log(LOG_INFO, "Started health check timer (" .. HEALTH_CHECK_INTERVAL .. "s)")
+
+    -- Start update-check timer (silent by design when Auto Update is Off) and
+    -- run an initial poll so property values populate immediately.
+    startUpdateCheckTimer()
+    checkForUpdates(true)
 end
 
 function OnDriverDestroyed()
@@ -991,5 +1174,9 @@ function OnDriverDestroyed()
     if HEALTH_CHECK_TIMER then
         C4:KillTimer(HEALTH_CHECK_TIMER)
         HEALTH_CHECK_TIMER = nil
+    end
+    if UPDATE_CHECK_TIMER then
+        C4:KillTimer(UPDATE_CHECK_TIMER)
+        UPDATE_CHECK_TIMER = nil
     end
 end
