@@ -218,6 +218,54 @@ Detection events are already flowing. See [Programming Examples](#programming-ex
 
 ---
 
+## Auto Update
+
+The NVR driver can self-install future releases pulled directly from GitHub — no Composer side-loading required after the initial install. Once you've loaded the drivers once via Composer, setting **Auto Update** to a channel enables the installed driver to poll, download, and hot-reload new `.c4z` files on its own.
+
+### How it works
+
+Every 24 hours (and immediately when the property changes), the NVR driver:
+
+1. Polls the GitHub Releases API for the newest release on the selected channel
+2. If newer than the installed version, downloads both `frigate-nvr.c4z` and `frigate-camera.c4z` from the release's assets
+3. Writes them to the controller's driver directory (`C4Z_ROOT`)
+4. Asks Director to hot-reload them via a local SOAP `UpdateProjectC4i` call on `127.0.0.1:5020`
+
+The camera driver is installed first; the NVR driver last (because the NVR install reloads its own Lua VM). Both drivers come back online on the new version within seconds.
+
+### Channels
+
+| Value | What it does |
+|-------|--------------|
+| **Off** (default) | No polling, no GitHub calls, no auto-install. Use this if you want to manually control when the driver updates. |
+| **Beta** | Polls for the newest release, including GitHub prereleases (tagged `-beta` / `-rc` / `-alpha`). Auto-installs when newer. |
+| **Release** | Polls for the newest stable release only, excluding prereleases. Auto-installs when newer. |
+
+### Read-only properties surfaced after each check
+
+- **Driver Release** — the tag currently installed (e.g. `v0.8.10-beta`)
+- **Latest Available Version** — the newest tag on the selected channel
+- **Update Download URL** — GitHub release page when an update is waiting
+
+### `Check for Updates Now` action
+
+Manual trigger available in the Actions tab. When **Auto Update** is `Off`, it probes the `Release` channel and reports availability **without installing**. When a channel is selected, it runs the same flow the 24h timer runs — and will install if a newer release is available.
+
+### Safety
+
+- **Anti-loop guard**: if the driver tries to self-install but reboots on the same version (installation failed for some reason), the initial poll is skipped for 5 minutes so a broken release can't infinite-loop.
+- **Asset verification**: downloads are only written if the response is HTTP 2xx/3xx AND the body begins with the zip magic bytes (`PK\x03\x04`).
+- **Missing assets**: if a release doesn't ship both `frigate-nvr.c4z` and `frigate-camera.c4z`, the install is skipped and a warning is logged.
+- **Manual override always available**: stay on **Off** and install via Composer as usual — the auto-updater does nothing.
+
+### Prerequisites
+
+- The initial install of both drivers must still be done via Composer (the auto-updater updates an already-installed driver; it can't install a driver that isn't there).
+- The controller needs outbound HTTPS access to `api.github.com` and GitHub's release CDN.
+- The GitHub repo must be public (release assets are fetched anonymously).
+
+---
+
 ## What the Customer Sees
 
 ### On Touchscreens & Mobile Apps
