@@ -13,7 +13,7 @@
     frigate/+/person|car|dog|cat   — object count per camera
     frigate/+/motion               — motion ON/OFF per camera
     frigate/+/+/person|car|dog|cat — zone object counts
-    frigate/+/audio/+              — audio detection events
+    frigate/+/audio/<type>         — audio detection events (explicit whitelist — excludes rms/dBFS telemetry)
     frigate/+/detect/state         — detection enable/disable
     frigate/+/recordings/state     — recording enable/disable
 
@@ -64,7 +64,7 @@ local PERSIST_LAST_INSTALL = "last_install_attempt"
 
 -- Current release tag for this driver build. Bumped per release alongside <version>.
 -- Used as the comparison baseline for the update checker.
-local DRIVER_RELEASE  = "v0.8.10-beta"
+local DRIVER_RELEASE  = "v0.8.11-beta"
 
 -- GitHub repo for auto-update checks
 local UPDATE_REPO     = "mattstein111/control4-frigate"
@@ -259,6 +259,13 @@ end
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------
 
+-- Frigate audio-detection types. Anything outside this set on frigate/<cam>/audio/<type>
+-- is telemetry (rms, dBFS, future additions) and must be ignored.
+AUDIO_DETECTION_TYPES = {
+    speech=true, bark=true, scream=true, yell=true, fire_alarm=true,
+    glass_breaking=true, siren=true, car_horn=true, music=true,
+}
+
 --- Subscribe to all Frigate MQTT topics.
 local function subscribeFrigateTopics()
     if not mqttClient then return end
@@ -277,8 +284,16 @@ local function subscribeFrigateTopics()
         "frigate/+/+/car",
         "frigate/+/+/dog",
         "frigate/+/+/cat",
-        -- Audio and state
-        "frigate/+/audio/+",
+        -- Audio detection events (whitelist — excludes rms/dBFS telemetry that would flood Last Event)
+        "frigate/+/audio/speech",
+        "frigate/+/audio/bark",
+        "frigate/+/audio/scream",
+        "frigate/+/audio/yell",
+        "frigate/+/audio/fire_alarm",
+        "frigate/+/audio/glass_breaking",
+        "frigate/+/audio/siren",
+        "frigate/+/audio/car_horn",
+        "frigate/+/audio/music",
         "frigate/+/detect/state",
         "frigate/+/recordings/state",
     }
@@ -376,11 +391,15 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     end
 
     -- frigate/<camera>/audio/<type> (audio detection events)
+    -- Whitelist detection types; Frigate also publishes rms/dBFS telemetry on this tree
+    -- that would otherwise flood Last Event with bogus "Audio: Rms" entries.
     if #segments == 4 and segments[3] == "audio" and segments[4] ~= "state" then
-        -- Audio detection payload is a count or score; > 0 means detected
+        local audioType = segments[4]
+        if not AUDIO_DETECTION_TYPES[audioType] then
+            return
+        end
         local val = tonumber(payload) or 0
         if val > 0 then
-            local audioType = segments[4]
             sendToCamera(camName, "FRIGATE_AUDIO", { audio_type = audioType })
             log(LOG_TRACE, "Audio: " .. audioType .. " on " .. camName)
         end

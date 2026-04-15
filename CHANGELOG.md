@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.11-beta] - 2026-04-15
+
+### Fixed
+
+- **Spurious `Audio: Rms` events flooding `Last Event` on every camera (#23).** The NVR driver's MQTT handler subscribed to `frigate/+/audio/+`, which matches Frigate 0.17's continuous audio telemetry topics (`rms`, `dBFS`) in addition to discrete detections. Because those telemetry values are effectively always > 0, the driver fired `FRIGATE_AUDIO { audio_type = "rms" }` on every publish, overwriting the camera's `Last Event` display and pushing real detections (speech, bark, etc.) off-screen. Fixed by (1) narrowing MQTT subscriptions to the explicit list of audio detection types — `speech`, `bark`, `scream`, `yell`, `fire_alarm`, `glass_breaking`, `siren`, `car_horn`, `music` — so telemetry topics never reach the driver at all, and (2) adding an in-driver whitelist (`AUDIO_DETECTION_TYPES`) as belt-and-suspenders against future Frigate telemetry additions. Significant controller-CPU reduction expected on systems with Frigate audio enabled (dozens of bogus messages per camera per second are no longer dispatched through the C4 proxy).
+
+### Changed
+
+- NVR driver bumped to v43, camera driver bumped to v38 so Director will hot-reload both via the self-install auto-updater.
+
 ## [0.8.10-beta] - 2026-04-15
 
 ### Changed
