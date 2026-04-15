@@ -135,9 +135,12 @@ If cameras pull directly, go2rtc's RTSP server returns 404 because no source is 
 
 ### Step 1 — Load the Drivers
 
-1. Obtain the two `.c4z` driver files:
+1. Download the two `.c4z` driver files from the [latest release](https://github.com/mattstein111/control4-frigate/releases/latest) on GitHub:
    - `frigate-nvr.c4z`
    - `frigate-camera.c4z`
+
+   > Beta releases are published as GitHub **prereleases** and are visible only on the [full releases page](https://github.com/mattstein111/control4-frigate/releases). `Latest` always points at the most recent stable build.
+
 2. In Composer Pro, go to **System Design → Driver menu → Add or Update Driver or Agent**
 3. Browse to each `.c4z` file and add it. Repeat for both files.
 
@@ -484,8 +487,8 @@ cd control4-frigate
 ```
 
 Output in `dist/`:
-- `frigate-camera.c4z` (~9 KB)
-- `frigate-nvr.c4z` (~11 KB)
+- `frigate-camera.c4z` (~11 KB)
+- `frigate-nvr.c4z` (~52 KB — includes the full Navigator icon ladder)
 
 A `.c4z` is simply a ZIP file containing the driver XML, Lua, and documentation.
 
@@ -494,8 +497,12 @@ A `.c4z` is simply a ZIP file containing the driver XML, Lua, and documentation.
 ```
 control4-frigate/
 ├── README.md
+├── CHANGELOG.md
 ├── LICENSE
 ├── build.sh                    # Packages .c4z driver files
+├── .github/workflows/
+│   ├── build.yml               # Build .c4z on every push / PR
+│   └── release.yml             # Attach .c4z to tagged releases (auto-prerelease for -beta/-rc/-alpha)
 ├── camera-driver/
 │   ├── driver.xml              # Camera proxy manifest (events, variables, capabilities)
 │   ├── driver.lua              # Streams, detection event handling, history, variables
@@ -503,7 +510,9 @@ control4-frigate/
 ├── nvr-driver/
 │   ├── driver.xml              # NVR controller manifest (actions, properties)
 │   ├── driver.lua              # Discovery, MQTT client, event routing
-│   └── www/documentation.html  # Help page shown in Composer Pro
+│   └── www/
+│       ├── documentation.html  # Help page shown in Composer Pro
+│       └── icons/              # device_sm/lg + experience_* ladder + logo.svg
 └── dist/                       # Built .c4z files (gitignored)
 ```
 
