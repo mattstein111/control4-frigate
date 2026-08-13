@@ -77,8 +77,48 @@ local PORT_RTSP     = 8554
 -- Proxy binding ID (must match driver.xml)
 local PROXY_ID = 5001
 
--- Variable IDs (assigned in OnDriverLateInit)
-local VAR = {}
+-- Variable names. C4:SetVariable is called by name, NOT with the return
+-- value of C4:AddVariable — that return is a boolean, not an identifier,
+-- and passing it to SetVariable raises "identifier should be a
+-- number/string" (issue #27).
+local VAR = {
+    -- Boolean
+    PERSON_DETECTED    = "PERSON_DETECTED",
+    CAR_DETECTED       = "CAR_DETECTED",
+    DOG_DETECTED       = "DOG_DETECTED",
+    CAT_DETECTED       = "CAT_DETECTED",
+    MOTION_DETECTED    = "MOTION_DETECTED",
+    CAMERA_ONLINE      = "CAMERA_ONLINE",
+
+    -- Numeric
+    PERSON_COUNT       = "PERSON_COUNT",
+    CAR_COUNT          = "CAR_COUNT",
+
+    -- State
+    DETECTION_ENABLED  = "DETECTION_ENABLED",
+    RECORDING_ENABLED  = "RECORDING_ENABLED",
+    LOITERING_DETECTED = "LOITERING_DETECTED",
+
+    -- Last-seen timestamps (object/motion/loitering)
+    PERSON_LAST_SEEN    = "PERSON_LAST_SEEN",
+    CAR_LAST_SEEN       = "CAR_LAST_SEEN",
+    DOG_LAST_SEEN       = "DOG_LAST_SEEN",
+    CAT_LAST_SEEN       = "CAT_LAST_SEEN",
+    MOTION_LAST_SEEN    = "MOTION_LAST_SEEN",
+    LOITERING_LAST_SEEN = "LOITERING_LAST_SEEN",
+
+    -- Last-heard timestamps (audio)
+    AUDIO_LAST_HEARD          = "AUDIO_LAST_HEARD",
+    SPEECH_LAST_HEARD         = "SPEECH_LAST_HEARD",
+    BARK_LAST_HEARD           = "BARK_LAST_HEARD",
+    SCREAM_LAST_HEARD         = "SCREAM_LAST_HEARD",
+    YELL_LAST_HEARD           = "YELL_LAST_HEARD",
+    FIRE_ALARM_LAST_HEARD     = "FIRE_ALARM_LAST_HEARD",
+    GLASS_BREAKING_LAST_HEARD = "GLASS_BREAKING_LAST_HEARD",
+    SIREN_LAST_HEARD          = "SIREN_LAST_HEARD",
+    CAR_HORN_LAST_HEARD       = "CAR_HORN_LAST_HEARD",
+    MUSIC_LAST_HEARD          = "MUSIC_LAST_HEARD",
+}
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -128,48 +168,61 @@ end
 -- Variables (Composer conditionals)
 ------------------------------------------------------------------------
 
+--- Create the driver variables with their initial values.
+--- The return value of C4:AddVariable is deliberately ignored — see the
+--- VAR table above. Variables are updated by name via setVar().
 local function initVariables()
     -- Boolean variables
-    VAR.PERSON_DETECTED    = C4:AddVariable("PERSON_DETECTED", "false", "BOOL")
-    VAR.CAR_DETECTED       = C4:AddVariable("CAR_DETECTED", "false", "BOOL")
-    VAR.DOG_DETECTED       = C4:AddVariable("DOG_DETECTED", "false", "BOOL")
-    VAR.CAT_DETECTED       = C4:AddVariable("CAT_DETECTED", "false", "BOOL")
-    VAR.MOTION_DETECTED    = C4:AddVariable("MOTION_DETECTED", "false", "BOOL")
-    VAR.CAMERA_ONLINE      = C4:AddVariable("CAMERA_ONLINE", "true", "BOOL")
+    C4:AddVariable(VAR.PERSON_DETECTED,    "false", "BOOL")
+    C4:AddVariable(VAR.CAR_DETECTED,       "false", "BOOL")
+    C4:AddVariable(VAR.DOG_DETECTED,       "false", "BOOL")
+    C4:AddVariable(VAR.CAT_DETECTED,       "false", "BOOL")
+    C4:AddVariable(VAR.MOTION_DETECTED,    "false", "BOOL")
+    C4:AddVariable(VAR.CAMERA_ONLINE,      "true",  "BOOL")
 
     -- Numeric variables
-    VAR.PERSON_COUNT       = C4:AddVariable("PERSON_COUNT", "0", "NUMBER")
-    VAR.CAR_COUNT          = C4:AddVariable("CAR_COUNT", "0", "NUMBER")
+    C4:AddVariable(VAR.PERSON_COUNT, "0", "NUMBER")
+    C4:AddVariable(VAR.CAR_COUNT,    "0", "NUMBER")
 
     -- State variables
-    VAR.DETECTION_ENABLED  = C4:AddVariable("DETECTION_ENABLED", "true", "BOOL")
-    VAR.RECORDING_ENABLED  = C4:AddVariable("RECORDING_ENABLED", "true", "BOOL")
-    VAR.LOITERING_DETECTED = C4:AddVariable("LOITERING_DETECTED", "false", "BOOL")
+    C4:AddVariable(VAR.DETECTION_ENABLED,  "true",  "BOOL")
+    C4:AddVariable(VAR.RECORDING_ENABLED,  "true",  "BOOL")
+    C4:AddVariable(VAR.LOITERING_DETECTED, "false", "BOOL")
 
     -- Last-seen timestamps (object/motion/loitering)
-    VAR.PERSON_LAST_SEEN       = C4:AddVariable("PERSON_LAST_SEEN", "", "STRING")
-    VAR.CAR_LAST_SEEN          = C4:AddVariable("CAR_LAST_SEEN", "", "STRING")
-    VAR.DOG_LAST_SEEN          = C4:AddVariable("DOG_LAST_SEEN", "", "STRING")
-    VAR.CAT_LAST_SEEN          = C4:AddVariable("CAT_LAST_SEEN", "", "STRING")
-    VAR.MOTION_LAST_SEEN       = C4:AddVariable("MOTION_LAST_SEEN", "", "STRING")
-    VAR.LOITERING_LAST_SEEN    = C4:AddVariable("LOITERING_LAST_SEEN", "", "STRING")
+    C4:AddVariable(VAR.PERSON_LAST_SEEN,    "", "STRING")
+    C4:AddVariable(VAR.CAR_LAST_SEEN,       "", "STRING")
+    C4:AddVariable(VAR.DOG_LAST_SEEN,       "", "STRING")
+    C4:AddVariable(VAR.CAT_LAST_SEEN,       "", "STRING")
+    C4:AddVariable(VAR.MOTION_LAST_SEEN,    "", "STRING")
+    C4:AddVariable(VAR.LOITERING_LAST_SEEN, "", "STRING")
 
     -- Last-heard timestamps (audio)
-    VAR.AUDIO_LAST_HEARD           = C4:AddVariable("AUDIO_LAST_HEARD", "", "STRING")
-    VAR.SPEECH_LAST_HEARD          = C4:AddVariable("SPEECH_LAST_HEARD", "", "STRING")
-    VAR.BARK_LAST_HEARD            = C4:AddVariable("BARK_LAST_HEARD", "", "STRING")
-    VAR.SCREAM_LAST_HEARD          = C4:AddVariable("SCREAM_LAST_HEARD", "", "STRING")
-    VAR.YELL_LAST_HEARD            = C4:AddVariable("YELL_LAST_HEARD", "", "STRING")
-    VAR.FIRE_ALARM_LAST_HEARD      = C4:AddVariable("FIRE_ALARM_LAST_HEARD", "", "STRING")
-    VAR.GLASS_BREAKING_LAST_HEARD  = C4:AddVariable("GLASS_BREAKING_LAST_HEARD", "", "STRING")
-    VAR.SIREN_LAST_HEARD           = C4:AddVariable("SIREN_LAST_HEARD", "", "STRING")
-    VAR.CAR_HORN_LAST_HEARD        = C4:AddVariable("CAR_HORN_LAST_HEARD", "", "STRING")
-    VAR.MUSIC_LAST_HEARD           = C4:AddVariable("MUSIC_LAST_HEARD", "", "STRING")
+    C4:AddVariable(VAR.AUDIO_LAST_HEARD,          "", "STRING")
+    C4:AddVariable(VAR.SPEECH_LAST_HEARD,         "", "STRING")
+    C4:AddVariable(VAR.BARK_LAST_HEARD,           "", "STRING")
+    C4:AddVariable(VAR.SCREAM_LAST_HEARD,         "", "STRING")
+    C4:AddVariable(VAR.YELL_LAST_HEARD,           "", "STRING")
+    C4:AddVariable(VAR.FIRE_ALARM_LAST_HEARD,     "", "STRING")
+    C4:AddVariable(VAR.GLASS_BREAKING_LAST_HEARD, "", "STRING")
+    C4:AddVariable(VAR.SIREN_LAST_HEARD,          "", "STRING")
+    C4:AddVariable(VAR.CAR_HORN_LAST_HEARD,       "", "STRING")
+    C4:AddVariable(VAR.MUSIC_LAST_HEARD,          "", "STRING")
 end
 
-local function setVar(varId, value)
-    if varId then
-        C4:SetVariable(varId, tostring(value))
+--- Update a driver variable by name. Never let a bad variable name abort
+--- the calling handler — a failed SetVariable must not stop events from
+--- firing (issue #27).
+local function setVar(varName, value)
+    if type(varName) ~= "string" or varName == "" then
+        log(LOG_ERROR, "setVar called with invalid variable name: " .. tostring(varName))
+        return
+    end
+    local ok, err = pcall(function()
+        C4:SetVariable(varName, tostring(value))
+    end)
+    if not ok then
+        log(LOG_ERROR, "SetVariable failed for " .. varName .. ": " .. tostring(err))
     end
 end
 

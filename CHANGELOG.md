@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.12-beta] - 2026-08-13
+
+### Fixed
+
+- **Camera driver: every variable update threw `LUA_ERROR`, so detection and motion events never fired (#27).** `initVariables()` stored the *return value* of `C4:AddVariable()` in the `VAR` table, but that return is a boolean — not a variable identifier. Every `setVar()` call therefore invoked `C4:SetVariable(true, …)` and raised `identifier should be a number/string`, which aborted the enclosing handler at its first variable write. The visible consequences: `Person Detected`, `Car Detected`, `Object Detected`, `Motion Detected`/`Motion Stopped`, loitering, camera online/offline and audio events never fired for Composer programming; no history entries were recorded; `Last Event` never updated; and all 27 driver variables kept their initial values permanently. Fixed by addressing variables **by name** (`C4:SetVariable` accepts a name) via a static `VAR` name table, with `C4:AddVariable` now used only to create them. `setVar()` additionally validates the name and wraps the call in `pcall`, so a future variable problem degrades to a log line instead of silently killing event dispatch. Present since v0.7.0-beta.
+
+### Changed
+
+- NVR driver bumped to v44, camera driver bumped to v39 so Director will hot-reload both via the self-install auto-updater.
+
 ## [0.8.11-beta] - 2026-04-15
 
 ### Fixed
