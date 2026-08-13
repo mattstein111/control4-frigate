@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.15-beta] - 2026-08-13
+
+### Fixed
+
+- **Regression from v0.8.14-beta: history stopped being stored at all.** v0.8.14-beta began passing the optional metadata table documented as `C4:RecordHistory`'s fifth parameter. On OS 3.4.3 that form does not store the record — it returns no UUID — so entries stopped appearing even in the History agent, which v0.8.13-beta had working. The metadata table was the one speculative part of that change; every shipping third-party camera driver examined calls `C4:RecordHistory` with four arguments and no table.
+
+  `recordHistory()` now calls the **plain four-argument form first** and only attempts the metadata form as a fallback if the plain call returns no UUID, so it is correct on firmware that requires either. Both paths are covered by the regression harness, which models firmware that rejects the table and firmware that accepts it. When both forms fail, the warning now reports what each returned instead of a generic message.
+
+  The category alignment from v0.8.14-beta (`Cameras` / `Frigate`, matching `C4:RegisterEvents`) is retained — that part was not implicated.
+
+### Changed
+
+- NVR driver bumped to v47, camera driver bumped to v42.
+
 ## [0.8.14-beta] - 2026-08-13
 
 ### Fixed

@@ -253,25 +253,47 @@ local HISTORY_SUBCATEGORY = "Frigate"
 --- Returns the UUID of the stored record, or nil if it was not recorded — so
 --- the return value is a reliable success check. Matches the call pattern used
 --- by shipping third-party camera drivers.
+--- The four-argument form is the one used by shipping third-party camera
+--- drivers and is treated as authoritative. The optional metadata table is
+--- documented but was observed to stop records being stored on OS 3.4.3
+--- (v0.8.14-beta regression), so it is attempted only as an enhancement and
+--- immediately falls back to the plain form if it does not return a UUID.
 local function recordHistory(message, severity, eventType)
     severity = severity or "Info"
     if severity ~= "Info" and severity ~= "Warning" and severity ~= "Critical" then
         severity = "Info"
     end
-    local ok, uuid = pcall(function()
-        return C4:RecordHistory(severity, eventType or "Camera Event",
-                                HISTORY_CATEGORY, HISTORY_SUBCATEGORY,
-                                { Description = tostring(message),
-                                  Camera      = cameraName() or "" })
-    end)
-    if not ok then
-        log(LOG_ERROR, "RecordHistory raised for '" .. tostring(message) .. "': " .. tostring(uuid))
-    elseif uuid == nil or uuid == "" then
-        log(LOG_WARNING, "RecordHistory did not store '" .. tostring(message)
-            .. "' (nil UUID) — check the History agent is installed")
-    else
-        log(LOG_DEBUG, "History recorded: " .. tostring(eventType) .. " (" .. tostring(uuid) .. ")")
+    eventType = eventType or "Camera Event"
+
+    local function record(...)
+        local ok, uuid = pcall(C4.RecordHistory, C4, ...)
+        if not ok then return nil, tostring(uuid) end
+        if uuid == nil or uuid == "" then return nil, nil end
+        return uuid, nil
     end
+
+    -- Plain four-argument form first: proven, and the one that matters.
+    local uuid, err = record(severity, eventType, HISTORY_CATEGORY, HISTORY_SUBCATEGORY)
+
+    if uuid then
+        log(LOG_DEBUG, "History recorded: " .. eventType .. " (" .. uuid .. ")")
+        return
+    end
+
+    -- Only if the plain form failed, try with the documented metadata table —
+    -- covers firmware where the extra argument is required rather than fatal.
+    local uuid2, err2 = record(severity, eventType, HISTORY_CATEGORY, HISTORY_SUBCATEGORY,
+                               { Description = tostring(message),
+                                 Camera      = cameraName() or "" })
+    if uuid2 then
+        log(LOG_DEBUG, "History recorded (with metadata): " .. eventType .. " (" .. uuid2 .. ")")
+        return
+    end
+
+    log(LOG_WARNING, "RecordHistory did not store '" .. tostring(message)
+        .. "' — plain form: " .. (err or "nil UUID")
+        .. "; with metadata: " .. (err2 or "nil UUID")
+        .. ". Check the History agent is installed and running.")
 end
 
 ------------------------------------------------------------------------
