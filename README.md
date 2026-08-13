@@ -292,12 +292,23 @@ We don't yet have a workaround. Possible future paths: relay go2rtc's output thr
 The audio-detection events (Speech / Bark / Scream / etc.) are unaffected — those flow via MQTT and work correctly regardless of live-audio playback.
 
 ### In the Control4 App History
-Every detection event is logged with a timestamp:
-- *"Person detected"*
-- *"Car left"*
-- *"Motion started"*
-- *"Person entered zone: Front Porch"*
-- *"Car loitering in zone: No Parking"* (Warning severity)
+Every detection event is logged with a timestamp and appears both in the History agent and in the Control4 app:
+- *"Person Detected"* / *"Person Left"*
+- *"Car Detected"* / *"Car Left"*
+- *"Motion Detected"* / *"Motion Stopped"*
+- *"Zone Entered"* / *"Zone Exited"*
+- *"Loitering Detected"* (Warning severity)
+- *"Camera Online"* / *"Camera Offline"*
+- *"Audio: Speech"*, *"Audio: Bark"*, and the other audio detection types
+
+**Two Control4 agents are required for this to work:**
+
+| Agent | Why |
+|---|---|
+| **History** | Without it, history records are silently discarded — nothing is stored anywhere. |
+| **Navigation** | Required for deep-linking from a push notification into the relevant camera. |
+
+Add both in Composer Pro under **Agents**. If history is missing, set the camera driver's `Log Mode` to `Print and Log` and `Log Level` to `4 - Debug`; the driver logs the history record's UUID on success, and reports the specific failure on both call forms if a record cannot be stored.
 
 ---
 
