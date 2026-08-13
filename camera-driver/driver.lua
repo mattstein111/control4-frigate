@@ -231,12 +231,26 @@ end
 ------------------------------------------------------------------------
 
 --- Record an event in the device's history log.
---- severity: "Info", "Warning", "Critical"
-local function recordHistory(message, severity)
+---
+--- C4:RecordHistory takes FIVE parameters, in this order (issue #24):
+---   severity     "Info" | "Warning" | "Critical"
+---   type         the specific event, e.g. "Person Detected"
+---   category     the domain — "Security" for camera events
+---   subcategory  the device kind — "Camera"
+---   description  the human-readable message
+---
+--- Passing four arguments (as this driver did until v0.8.13-beta) shifts every
+--- field one position left and drops `description` entirely, so the message
+--- landed in `category` and the record was unusable. Signature confirmed
+--- against Control4's own c4_utils.lua, shipped in camera_ip_compatibility_test.c4z.
+local function recordHistory(message, severity, eventType)
     severity = severity or "Info"
-    -- C4:RecordHistory records to the device's history in the C4 app
-    -- Parameters: severity, event category, event description, details
-    C4:RecordHistory(severity, "Camera", message, "")
+    local ok, err = pcall(function()
+        C4:RecordHistory(severity, eventType or "Camera Event", "Security", "Camera", message)
+    end)
+    if not ok then
+        log(LOG_ERROR, "RecordHistory failed for '" .. tostring(message) .. "': " .. tostring(err))
+    end
 end
 
 ------------------------------------------------------------------------
@@ -306,11 +320,11 @@ local function handleDetection(tParams)
         if count > 0 and eventType == "new" then
             fireEvent("Person Detected")
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
             fireEvent("Person Left")
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     elseif objType == "car" then
         setVar(VAR.CAR_COUNT, count)
@@ -319,11 +333,11 @@ local function handleDetection(tParams)
         if count > 0 and eventType == "new" then
             fireEvent("Car Detected")
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
             fireEvent("Car Left")
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     elseif objType == "dog" then
         setVar(VAR.DOG_DETECTED, count > 0 and "true" or "false")
@@ -331,10 +345,10 @@ local function handleDetection(tParams)
         if count > 0 and eventType == "new" then
             fireEvent("Dog Detected")
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     elseif objType == "cat" then
         setVar(VAR.CAT_DETECTED, count > 0 and "true" or "false")
@@ -342,19 +356,19 @@ local function handleDetection(tParams)
         if count > 0 and eventType == "new" then
             fireEvent("Cat Detected")
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     else
         -- Generic object
         if count > 0 and eventType == "new" then
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     end
 
@@ -374,10 +388,10 @@ local function handleMotion(tParams)
         setVar(VAR.MOTION_LAST_SEEN, ts)
         C4:UpdateProperty(PROP_LAST_MOTION, ts)
         fireEvent("Motion Detected")
-        recordHistory("Motion detected", "Info")
+        recordHistory("Motion detected", "Info", "Motion Detected")
     else
         fireEvent("Motion Stopped")
-        recordHistory("Motion stopped", "Info")
+        recordHistory("Motion stopped", "Info", "Motion Stopped")
     end
 end
 
@@ -392,12 +406,12 @@ local function handleZone(tParams)
 
     if count > 0 then
         fireEvent("Zone Entered")
-        recordHistory(friendly .. " entered zone: " .. friendlyZ, "Info")
+        recordHistory(friendly .. " entered zone: " .. friendlyZ, "Info", "Zone Entered")
     else
         -- Reset loitering when zone clears
         setVar(VAR.LOITERING_DETECTED, "false")
         fireEvent("Zone Exited")
-        recordHistory(friendly .. " left zone: " .. friendlyZ, "Info")
+        recordHistory(friendly .. " left zone: " .. friendlyZ, "Info", "Zone Exited")
     end
 end
 
@@ -413,7 +427,7 @@ local function handleLoitering(tParams)
     setVar(VAR.LOITERING_LAST_SEEN, timestamp())
 
     fireEvent("Loitering Detected")
-    recordHistory(friendly .. " loitering in zone: " .. friendlyZ, "Warning")
+    recordHistory(friendly .. " loitering in zone: " .. friendlyZ, "Warning", "Loitering Detected")
     C4:UpdateProperty(PROP_LAST_EVENT, friendly .. " loitering in " .. friendlyZ .. " — " .. timestamp())
 end
 
@@ -427,11 +441,11 @@ local function handleHealth(tParams)
     if online then
         fireEvent("Camera Online")
         setStatus("Online — " .. (cameraName() or ""))
-        recordHistory("Camera came online", "Info")
+        recordHistory("Camera came online", "Info", "Camera Online")
     else
         fireEvent("Camera Offline")
         setStatus("Offline")
-        recordHistory("Camera went offline", "Warning")
+        recordHistory("Camera went offline", "Warning", "Camera Offline")
     end
 end
 
@@ -481,7 +495,7 @@ local function handleAudio(tParams)
         fireEvent(eventName)
     end
     fireEvent("Audio Detected")
-    recordHistory("Audio: " .. friendly, "Info")
+    recordHistory("Audio: " .. friendly, "Info", "Audio: " .. friendly)
     C4:UpdateProperty(PROP_LAST_EVENT, "Audio: " .. friendly .. " — " .. ts)
 end
 
@@ -500,19 +514,19 @@ local function handleStateChange(tParams)
         setVar(VAR.DETECTION_ENABLED, enabled and "true" or "false")
         if enabled then
             fireEvent("Detection Enabled")
-            recordHistory("Detection enabled", "Info")
+            recordHistory("Detection enabled", "Info", "Detection Enabled")
         else
             fireEvent("Detection Disabled")
-            recordHistory("Detection disabled", "Warning")
+            recordHistory("Detection disabled", "Warning", "Detection Disabled")
         end
     elseif setting == "recordings" then
         setVar(VAR.RECORDING_ENABLED, enabled and "true" or "false")
         if enabled then
             fireEvent("Recording Enabled")
-            recordHistory("Recording enabled", "Info")
+            recordHistory("Recording enabled", "Info", "Recording Enabled")
         else
             fireEvent("Recording Disabled")
-            recordHistory("Recording disabled", "Warning")
+            recordHistory("Recording disabled", "Warning", "Recording Disabled")
         end
     end
 end

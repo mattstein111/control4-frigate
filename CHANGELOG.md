@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.13-beta] - 2026-08-13
+
+### Fixed
+
+- **Camera driver: history entries were written with the wrong field layout (#24).** `C4:RecordHistory` takes **five** parameters — `(severity, type, category, subcategory, description)` — but the driver passed four: `C4:RecordHistory(severity, "Camera", message, "")`. Every field was therefore shifted one position left and the last dropped: the human-readable message landed in `category`, `subcategory` was an empty string, and `description` was `nil`. Camera events now record as `("Info", "Person Detected", "Security", "Camera", "Person detected")`, matching the field semantics documented in Control4's own drivers (`category` = domain, `subcategory` = device kind, `type` = specific event). Signature confirmed against `c4_utils.lua` as shipped inside Control4's `camera_ip_compatibility_test.c4z`, and corroborated by the stock `door_relay_control` pattern and the DS2 door station's History-agent parameter block. All 23 `recordHistory()` call sites now pass a meaningful event type. The call is additionally wrapped in `pcall` so a history failure can never abort its calling handler — the failure mode that made #27 so damaging.
+
+  Note: this fix was only reachable after #27, which prevented `recordHistory()` from ever executing. Whether the History **agent** must be present in the Control4 project for records to persist is still unverified.
+
+### Changed
+
+- NVR driver bumped to v45, camera driver bumped to v40.
+
 ## [0.8.12-beta] - 2026-08-13
 
 ### Fixed
