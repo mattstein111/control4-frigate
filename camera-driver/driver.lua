@@ -230,26 +230,47 @@ end
 -- History (visible in Control4 app + touchscreens)
 ------------------------------------------------------------------------
 
---- Record an event in the device's history log.
+--- History category/subcategory. These MUST match the values registered with
+--- C4:RegisterEvents() in registerNotificationEvents() below — the registration
+--- declares which (category, subcategory, type) tuples this device emits, and
+--- Navigator only surfaces recorded events that match a registration. Recording
+--- under a different category is why history was invisible in the Control4 app
+--- despite appearing in the History agent (issue #24).
+local HISTORY_CATEGORY    = "Cameras"
+local HISTORY_SUBCATEGORY = "Frigate"
+
+--- Record an event in the history database.
 ---
---- C4:RecordHistory takes FIVE parameters, in this order (issue #24):
----   severity     "Info" | "Warning" | "Critical"
----   type         the specific event, e.g. "Person Detected"
----   category     the domain — "Security" for camera events
----   subcategory  the device kind — "Camera"
----   description  the human-readable message
+--- Signature per the DriverWorks API reference (Helper Interface, 1.6.0+):
+---   C4:RecordHistory(severity, eventType, category, subcategory, metadata)
+---     severity     "Critical" | "Warning" | "Info"
+---     eventType    the specific event, e.g. "Person Detected" — this is the
+---                  text Navigator displays, and must match a registered type
+---     category     "Cameras"
+---     subcategory  optional — "Frigate"
+---     metadata     optional table of name-value pairs (NOT a description string)
 ---
---- Passing four arguments (as this driver did until v0.8.13-beta) shifts every
---- field one position left and drops `description` entirely, so the message
---- landed in `category` and the record was unusable. Signature confirmed
---- against Control4's own c4_utils.lua, shipped in camera_ip_compatibility_test.c4z.
+--- Returns the UUID of the stored record, or nil if it was not recorded — so
+--- the return value is a reliable success check. Matches the call pattern used
+--- by shipping third-party camera drivers.
 local function recordHistory(message, severity, eventType)
     severity = severity or "Info"
-    local ok, err = pcall(function()
-        C4:RecordHistory(severity, eventType or "Camera Event", "Security", "Camera", message)
+    if severity ~= "Info" and severity ~= "Warning" and severity ~= "Critical" then
+        severity = "Info"
+    end
+    local ok, uuid = pcall(function()
+        return C4:RecordHistory(severity, eventType or "Camera Event",
+                                HISTORY_CATEGORY, HISTORY_SUBCATEGORY,
+                                { Description = tostring(message),
+                                  Camera      = cameraName() or "" })
     end)
     if not ok then
-        log(LOG_ERROR, "RecordHistory failed for '" .. tostring(message) .. "': " .. tostring(err))
+        log(LOG_ERROR, "RecordHistory raised for '" .. tostring(message) .. "': " .. tostring(uuid))
+    elseif uuid == nil or uuid == "" then
+        log(LOG_WARNING, "RecordHistory did not store '" .. tostring(message)
+            .. "' (nil UUID) — check the History agent is installed")
+    else
+        log(LOG_DEBUG, "History recorded: " .. tostring(eventType) .. " (" .. tostring(uuid) .. ")")
     end
 end
 
@@ -550,30 +571,56 @@ end
 --- Register detection events with the History Agent for push notifications.
 local function registerNotificationEvents()
     local proxyDevices = C4:GetProxyDevices()
-    if type(proxyDevices) ~= "table" then return end
+    if type(proxyDevices) ~= "table" then
+        log(LOG_WARNING, "RegisterEvents skipped — GetProxyDevices returned no table; "
+            .. "history will not surface in the Control4 app")
+        return
+    end
 
     local proxyDeviceId = nil
     for id, _ in pairs(proxyDevices) do
         proxyDeviceId = id
         break
     end
-    if not proxyDeviceId then return end
+    if not proxyDeviceId then
+        log(LOG_WARNING, "RegisterEvents skipped — no proxy device id found; "
+            .. "history will not surface in the Control4 app")
+        return
+    end
 
+    -- Every event type passed to recordHistory() must be registered here, or
+    -- Navigator has no registration to match the stored record against.
     local types = {
-        "Person Detected", "Car Detected", "Dog Detected", "Cat Detected",
-        "Object Detected", "Motion Detected", "Loitering Detected",
-        "Camera Online", "Camera Offline"
+        -- Object detection
+        "Person Detected", "Person Left",
+        "Car Detected",    "Car Left",
+        "Dog Detected",    "Dog Left",
+        "Cat Detected",    "Cat Left",
+        "Object Detected", "Object Left",
+        -- Motion / zones / loitering
+        "Motion Detected", "Motion Stopped",
+        "Zone Entered",    "Zone Exited",
+        "Loitering Detected",
+        -- Health
+        "Camera Online",   "Camera Offline",
+        -- Audio detection
+        "Audio: Speech", "Audio: Bark", "Audio: Scream", "Audio: Yell",
+        "Audio: Fire Alarm", "Audio: Glass Breaking", "Audio: Siren",
+        "Audio: Car Horn", "Audio: Music",
+        -- State changes
+        "Detection Enabled", "Detection Disabled",
+        "Recording Enabled", "Recording Disabled",
     }
 
     local typeList = ""
     for _, t in ipairs(types) do
-        typeList = typeList .. '<type name="' .. t .. '"/>'
+        typeList = typeList .. '<type name="' .. C4:XmlEscapeString(t) .. '"/>'
     end
 
     local xml = '<events>'
         .. '<device id="' .. proxyDeviceId .. '"/>'
-        .. '<categories><category name="Cameras">'
-        .. '<subcategories><subcategory name="Frigate">'
+        .. '<categories><category name="' .. HISTORY_CATEGORY .. '">'
+        .. '<subcategories><subcategory name="' .. HISTORY_SUBCATEGORY .. '">'
         .. '<types>' .. typeList .. '</types>'
         .. '</subcategory></subcategories>'
         .. '</category></categories></events>'

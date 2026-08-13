@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.14-beta] - 2026-08-13
+
+### Fixed
+
+- **Camera history now surfaces in the Control4 app — the driver was recording history under a different category than it registered (#24).** `registerNotificationEvents()` declares to Director, via `C4:RegisterEvents`, that this device emits events under category `Cameras` / subcategory `Frigate`. But `recordHistory()` was storing them under category `Security` / subcategory `Camera`. Navigator only surfaces recorded events that match a registration, so the records were stored correctly (and visible in the History agent) yet had no matching registration for the app to render. Both ends now use shared `HISTORY_CATEGORY` / `HISTORY_SUBCATEGORY` constants, and the registered type list was expanded from 9 to 30 entries so every event type the driver records — object left events, motion stopped, zone entered/exited, all nine audio types, and the detection/recording state changes — is registered rather than just the nine detection types.
+
+- **Corrected the `C4:RecordHistory` call signature.** Per the DriverWorks API reference (Helper Interface, 1.6.0+) the signature is `C4:RecordHistory(severity, eventType, category, subcategory, metadata)`, where the fifth parameter is an optional **table** of name-value pairs — not a description string, as assumed in v0.8.13-beta. The human-readable text is carried by `eventType`, which is also the string Navigator displays. The description and camera name now travel in the metadata table where they belong. The call's return value (a record UUID, or nil if not stored) is checked and logged, giving a definitive success signal instead of a silent write.
+
+- **Registration failures are no longer silent.** If `C4:GetProxyDevices()` returns nothing usable, `registerNotificationEvents()` previously returned without a word, leaving history permanently invisible in the app with no diagnostic. It now logs a warning naming the consequence.
+
+### Changed
+
+- NVR driver bumped to v46, camera driver bumped to v41.
+
 ## [0.8.13-beta] - 2026-08-13
 
 ### Fixed
