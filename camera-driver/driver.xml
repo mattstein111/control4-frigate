@@ -142,6 +142,19 @@
           <item>Print and Log</item>
         </items>
       </property>
+      <property>
+        <name>Notification Image Freshness (seconds)</name>
+        <type>LIST</type>
+        <default>60</default>
+        <readonly>false</readonly>
+        <items>
+          <item>Off</item>
+          <item>30</item>
+          <item>60</item>
+          <item>120</item>
+          <item>300</item>
+        </items>
+      </property>
     </properties>
     <documentation file="www/documentation.html"></documentation>
     <script file="driver.lua"></script>

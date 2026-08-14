@@ -31,6 +31,7 @@ local PROP_STATUS      = "Camera Status"
 local PROP_LAST_EVENT  = "Last Event"
 local PROP_LAST_MOTION = "Last Motion"
 local PROP_LOG_LEVEL   = "Log Level"
+local PROP_NOTIFY_FRESHNESS = "Notification Image Freshness (seconds)"
 
 -- Log levels
 local LOG_FATAL   = 0
@@ -591,10 +592,26 @@ end
 function GetNotificationAttachmentURL(idBinding, tParams)
     local host = Properties[PROP_HOST] or ""
     local cam = cameraName()
-    log(LOG_DEBUG, "GetNotificationAttachmentURL called (binding=" .. tostring(idBinding) .. " cam=" .. tostring(cam) .. ")")
+    log(LOG_DEBUG, "GetNotificationAttachmentURL called (binding=" .. tostring(idBinding)
+        .. " cam=" .. tostring(cam) .. ")")
     if host == "" or not cam then return "" end
-    local url = "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
-    log(LOG_DEBUG, "Snapshot URL: " .. url)
+
+    local base = "http://" .. host .. ":" .. PORT_HTTP
+
+    -- "Off" disables event snapshots; an absent or unparseable value defaults
+    -- to 60s. Composer does not enforce type constraints, so parse defensively.
+    local raw = Properties[PROP_NOTIFY_FRESHNESS]
+    local window = (raw == "Off") and 0 or (tonumber(raw) or 60)
+
+    if window > 0 and lastEvent.id and lastEvent.hasSnapshot
+       and (os.time() - lastEvent.timestamp) <= window then
+        local url = base .. "/api/events/" .. lastEvent.id .. "/snapshot.jpg?bbox=1&h=480"
+        log(LOG_DEBUG, "Notification image: event snapshot " .. url)
+        return url
+    end
+
+    local url = base .. "/api/" .. cam .. "/latest.jpg"
+    log(LOG_DEBUG, "Notification image: live snapshot " .. url)
     return url
 end
 

@@ -183,5 +183,55 @@ pcall(ExecuteCommand, "FRIGATE_EVENT", { has_snapshot = true })
 le = __lastEvent()
 check("missing event_id leaves the cache intact", le.id == "1755000000.0-nosnap", le.id)
 
+------------------------------------------------------------------------
+-- Notification attachment URL selection (#25)
+------------------------------------------------------------------------
+local EVENT_URL = "http://192.168.1.50:5000/api/events/1755012345.678901-abc123/snapshot.jpg?bbox=1&h=480"
+local LIVE_URL  = "http://192.168.1.50:5000/api/bbq/latest.jpg"
+
+local function setEvent(id, hasSnapshot, ageSeconds)
+    local le = __lastEvent()
+    le.id, le.hasSnapshot = id, hasSnapshot
+    le.timestamp = os.time() - (ageSeconds or 0)
+end
+
+Properties["Notification Image Freshness (seconds)"] = "60"
+
+setEvent("1755012345.678901-abc123", true, 0)
+check("fresh event returns the event snapshot URL",
+      GetNotificationAttachmentURL(1001, {}) == EVENT_URL, GetNotificationAttachmentURL(1001, {}))
+
+setEvent("1755012345.678901-abc123", true, 60)
+check("event exactly at the window is still fresh",
+      GetNotificationAttachmentURL(1001, {}) == EVENT_URL, GetNotificationAttachmentURL(1001, {}))
+
+setEvent("1755012345.678901-abc123", true, 61)
+check("event past the window falls back to live",
+      GetNotificationAttachmentURL(1001, {}) == LIVE_URL, GetNotificationAttachmentURL(1001, {}))
+
+setEvent("1755012345.678901-abc123", false, 0)
+check("event without a snapshot falls back to live",
+      GetNotificationAttachmentURL(1001, {}) == LIVE_URL, GetNotificationAttachmentURL(1001, {}))
+
+setEvent(nil, false, 0)
+check("no event at all falls back to live",
+      GetNotificationAttachmentURL(1001, {}) == LIVE_URL, GetNotificationAttachmentURL(1001, {}))
+
+Properties["Notification Image Freshness (seconds)"] = "Off"
+setEvent("1755012345.678901-abc123", true, 0)
+check("freshness Off always returns live",
+      GetNotificationAttachmentURL(1001, {}) == LIVE_URL, GetNotificationAttachmentURL(1001, {}))
+
+Properties["Notification Image Freshness (seconds)"] = nil
+setEvent("1755012345.678901-abc123", true, 0)
+check("absent property defaults to 60s and uses the event",
+      GetNotificationAttachmentURL(1001, {}) == EVENT_URL, GetNotificationAttachmentURL(1001, {}))
+
+Properties["Notification Image Freshness (seconds)"] = "60"
+local savedHost = Properties["Frigate Host"]
+Properties["Frigate Host"] = ""
+check("unset host returns empty string", GetNotificationAttachmentURL(1001, {}) == "")
+Properties["Frigate Host"] = savedHost
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
