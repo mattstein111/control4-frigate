@@ -5,8 +5,8 @@
   <name>Frigate Camera</name>
   <model>Frigate Camera (go2rtc)</model>
   <created>2026-03-31</created>
-  <modified>2026-08-13</modified>
-  <version>42</version>
+  <modified>2026-08-14</modified>
+  <version>43</version>
 
   <capabilities>
     <modes>SNAPSHOT,MJPEG,H264</modes>
@@ -140,6 +140,19 @@
           <item>Print</item>
           <item>Log</item>
           <item>Print and Log</item>
+        </items>
+      </property>
+      <property>
+        <name>Notification Image Freshness (seconds)</name>
+        <type>LIST</type>
+        <default>60</default>
+        <readonly>false</readonly>
+        <items>
+          <item>Off</item>
+          <item>30</item>
+          <item>60</item>
+          <item>120</item>
+          <item>300</item>
         </items>
       </property>
     </properties>

@@ -31,6 +31,7 @@ local PROP_STATUS      = "Camera Status"
 local PROP_LAST_EVENT  = "Last Event"
 local PROP_LAST_MOTION = "Last Motion"
 local PROP_LOG_LEVEL   = "Log Level"
+local PROP_NOTIFY_FRESHNESS = "Notification Image Freshness (seconds)"
 
 -- Log levels
 local LOG_FATAL   = 0
@@ -119,6 +120,14 @@ local VAR = {
     CAR_HORN_LAST_HEARD       = "CAR_HORN_LAST_HEARD",
     MUSIC_LAST_HEARD          = "MUSIC_LAST_HEARD",
 }
+
+-- Last Frigate event seen for this camera, used to attach that event's
+-- snapshot to push notifications (#25). In-memory only: a driver reload
+-- falls back to the live snapshot until the next detection.
+local lastEvent = { id = nil, timestamp = 0, hasSnapshot = false }
+
+--- Test accessor. The driver's own code uses the local directly.
+function __lastEvent() return lastEvent end
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -583,10 +592,26 @@ end
 function GetNotificationAttachmentURL(idBinding, tParams)
     local host = Properties[PROP_HOST] or ""
     local cam = cameraName()
-    log(LOG_DEBUG, "GetNotificationAttachmentURL called (binding=" .. tostring(idBinding) .. " cam=" .. tostring(cam) .. ")")
+    log(LOG_DEBUG, "GetNotificationAttachmentURL called (binding=" .. tostring(idBinding)
+        .. " cam=" .. tostring(cam) .. ")")
     if host == "" or not cam then return "" end
-    local url = "http://" .. host .. ":" .. PORT_HTTP .. "/api/" .. cam .. "/latest.jpg"
-    log(LOG_DEBUG, "Snapshot URL: " .. url)
+
+    local base = "http://" .. host .. ":" .. PORT_HTTP
+
+    -- "Off" disables event snapshots; an absent or unparseable value defaults
+    -- to 60s. Composer does not enforce type constraints, so parse defensively.
+    local raw = Properties[PROP_NOTIFY_FRESHNESS]
+    local window = (raw == "Off") and 0 or (tonumber(raw) or 60)
+
+    if window > 0 and lastEvent.id and lastEvent.hasSnapshot
+       and (os.time() - lastEvent.timestamp) <= window then
+        local url = base .. "/api/events/" .. lastEvent.id .. "/snapshot.jpg?bbox=1&h=480"
+        log(LOG_DEBUG, "Notification image: event snapshot " .. url)
+        return url
+    end
+
+    local url = base .. "/api/" .. cam .. "/latest.jpg"
+    log(LOG_DEBUG, "Notification image: live snapshot " .. url)
     return url
 end
 
@@ -811,6 +836,20 @@ function ExecuteCommand(sCommand, tParams)
         end
     elseif sCommand == "FRIGATE_DETECTION" then
         handleDetection(tParams or {})
+    elseif sCommand == "FRIGATE_EVENT" then
+        local p = tParams or {}
+        if p.event_id and p.event_id ~= "" then
+            -- SendToDevice serialises booleans as strings; "false" is truthy
+            -- in Lua, so check explicitly (see c4-conventions §2).
+            local raw = p.has_snapshot
+            local hasSnapshot = (raw ~= false and raw ~= "false" and raw ~= "False"
+                                 and raw ~= 0 and raw ~= "0" and raw ~= nil)
+            lastEvent.id          = p.event_id
+            lastEvent.hasSnapshot = hasSnapshot
+            lastEvent.timestamp   = os.time()
+            log(LOG_DEBUG, "Cached event " .. p.event_id
+                .. " (snapshot=" .. tostring(hasSnapshot) .. ")")
+        end
     elseif sCommand == "FRIGATE_MOTION" then
         handleMotion(tParams or {})
     elseif sCommand == "FRIGATE_ZONE" then

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.16-beta] - 2026-08-14
+
+### Added
+
+- **Push notifications now show the Frigate event that triggered them (#25).** The notification image was `/api/<camera>/latest.jpg` — the camera's live view at the moment the notification rendered, which by then is usually an empty scene. The driver now attaches the snapshot of the event that actually fired the notification, with Frigate's bounding box drawn around the detected object. The NVR forwards the event id from the `frigate/events` messages it already subscribes to, so there is no new MQTT traffic.
+
+- **New camera property `Notification Image Freshness (seconds)`** — `Off`, `30`, `60` (default), `120`, `300`. Event snapshots are used only when the triggering event is within this window; anything older falls back to the live snapshot, so a motion notification never shows a person from twenty minutes ago. Set to `Off` to restore the previous behaviour exactly.
+
+- **Regression test harness committed and running in CI.** `test/driver_test.lua` and `test/nvr_test.lua` mock the DriverWorks API with the behaviours observed on OS 3.4.3 and guard the defects fixed in v0.8.12–v0.8.15 — variables addressed by name, history recorded under the registered category, and the four-argument `C4:RecordHistory` form.
+
+### Changed
+
+- NVR driver bumped to v48, camera driver bumped to v43.
+
 ## [0.8.15-beta] - 2026-08-13
 
 ### Fixed

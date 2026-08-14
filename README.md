@@ -535,6 +535,20 @@ No MQTT configuration is needed on the Frigate side — these topics are publish
 | **Camera shows "Not Configured"** | Properties not set | Run **Synchronize Cameras with Frigate** from the NVR driver, or manually enter Frigate Host and Camera Name. |
 | **Door station / single-stream camera not working** | Sub-stream doesn't exist | Run **Synchronize** — the driver auto-detects single-stream cameras. Or manually set **Use Sub Stream** to **No** on that camera. |
 
+### Push notification images
+
+When a notification fires, the driver attaches the Frigate snapshot of the event that triggered it — the full camera frame at the moment of detection, with a bounding box around the detected object. Without this, the image would be the camera's live view at the moment the notification renders, by which time the subject has usually left the frame.
+
+| Property | Setting | Effect |
+|----------|---------|--------|
+| **Notification Image Freshness (seconds)** | `60` (default) | Use the event snapshot when the triggering event is at most 60s old |
+| **Notification Image Freshness (seconds)** | `30` / `120` / `300` | Same, with a shorter or longer window |
+| **Notification Image Freshness (seconds)** | `Off` | Always use the camera's live snapshot |
+
+Events older than the window fall back to the live snapshot, so a motion notification never shows a person detected twenty minutes earlier. The image reflects the most recent object detection within the freshness window regardless of which event type triggered the notification — so a motion or audio notification shortly after a detection will show that detection's snapshot, and only falls back to the live snapshot when no recent detection exists.
+
+> **Note:** The snapshot URL points at the Frigate host on your LAN, exactly as the live snapshot URL always has. Whether images load in notifications received away from home is unchanged by this feature.
+
 ### Debugging
 
 Both drivers support configurable logging via **Log Mode** and **Log Level** properties:

@@ -64,7 +64,7 @@ local PERSIST_LAST_INSTALL = "last_install_attempt"
 
 -- Current release tag for this driver build. Bumped per release alongside <version>.
 -- Used as the comparison baseline for the update checker.
-local DRIVER_RELEASE  = "v0.8.15-beta"
+local DRIVER_RELEASE  = "v0.8.16-beta"
 
 -- GitHub repo for auto-update checks
 local UPDATE_REPO     = "mattstein111/control4-frigate"
@@ -255,6 +255,14 @@ local function jsonBool(json, key)
     return json:match(pattern) ~= nil
 end
 
+--- Extract the `after` object from a frigate/events payload.
+--- Event payloads carry both `before` and `after`; fields that change as the
+--- event matures (notably has_snapshot) must be read from `after`. The plain
+--- json* helpers match the FIRST occurrence, which falls inside `before`.
+local function jsonAfterObject(json)
+    return json:match('"after"%s*:%s*(%b{})')
+end
+
 ------------------------------------------------------------------------
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------
@@ -334,6 +342,21 @@ function handleEventJSON(payload)
         for zone in zonesStr:gmatch('"([^"]+)"') do
             table.insert(zones, zone)
         end
+    end
+
+    -- Forward the Frigate event id so the camera driver can attach this
+    -- event's snapshot to push notifications (#25).
+    local eventId = jsonString(payload, "id")
+    if eventId then
+        local after = jsonAfterObject(payload)
+        local hasSnapshot = after and jsonBool(after, "has_snapshot") or false
+        sendToCamera(camera, "FRIGATE_EVENT", {
+            event_id     = eventId,
+            has_snapshot = hasSnapshot,
+            label        = label or "object",
+        })
+        log(LOG_TRACE, "Event " .. eventId .. " on " .. camera
+            .. " (snapshot=" .. tostring(hasSnapshot) .. ")")
     end
 
     if loitering and #zones > 0 then
@@ -714,8 +737,8 @@ local function adoptOrphanCameras()
     local myDeviceId = C4:GetDeviceID()
     local orphanCount = 0
 
-    for devId, _ in pairs(existingDevices) do
-        devId = tonumber(devId)
+    for rawId, _ in pairs(existingDevices) do
+        local devId = tonumber(rawId)
         if devId and not managedDeviceIds[devId] then
             -- Ask this camera to identify itself
             C4:SendToDevice(devId, "IDENTIFY_CAMERA", {
