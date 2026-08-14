@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.8.16-beta] - 2026-08-14
+## [0.9.0-rc.1] - 2026-08-14
+
+### Changed
+
+- **Version scheme moves to release candidates as 1.0 approaches.** This is the same code as the (withdrawn) v0.8.16-beta, renumbered. Release candidates are published as GitHub prereleases and reach the `Beta` auto-update channel exactly as `-beta` builds did; the `Release` channel continues to exclude them. NVR driver bumped to v49, camera driver bumped to v44 so Director hot-reloads the renumbered build.
 
 ### Added
 
@@ -16,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- NVR driver bumped to v48, camera driver bumped to v43.
+- NVR driver bumped to v48, camera driver bumped to v43 (as v0.8.16-beta; superseded by the v49/v44 build above).
 
 ## [0.8.15-beta] - 2026-08-13
 
