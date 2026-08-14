@@ -31,6 +31,11 @@ Out of scope: changing how detections are processed once routed, the notificatio
 
 | Fact | Evidence |
 |---|---|
+| `package`, `car_alarm` and `glass` have really fired here | `/api/labels` lists labels with recorded events: `bark, car, car_alarm, fire_alarm, glass, package, person, speech, yell` |
+| `glass_breaking`, `siren`, `music`, `car_horn` have never fired | absent from `/api/labels` |
+| `RegisterEvents` may be called after `OnDriverLateInit` | DriverWorks API reference, `7_event/_5.2-RegisterEvents.md` |
+| Registration failures auto-retry every 30s | same source — covers the History-agent-not-ready race |
+| Navigator surfaces only *curated* categories | same source; `Cameras` is used in Control4's own example |
 | Object counts publish on `frigate/<camera>/<label>` | `frigate/<cam>/<label>/snapshot` retained for every tracked label |
 | Zone counts publish on `frigate/<camera>/<zone>/<label>` | live retained topic `frigate/thelma/illegal_parking/car` |
 | Audio publishes on `frigate/<camera>/audio/<label>` | live `rms` / `dBFS` on the same tree |
@@ -94,7 +99,11 @@ AUDIO_LABELS = {
 
 `glass` and `shatter` deliberately share an event and variable — the distinction is acoustic, not meaningful. `car_alarm` is deliberately separate from `car_horn`: a car alarm is a security event, a horn is not.
 
-Legacy labels (`glass_breaking`, `siren`, `music`, `car_horn`) stay in the table. They cost nothing and may be valid on other Frigate versions; removing them would break anyone whose config uses them.
+**Legacy labels are removed** — `glass_breaking`, `siren`, `music` and `car_horn` leave the mapping, and their events and variables leave `driver.xml`. `/api/labels` on the reference system returns the labels Frigate has actually recorded events for — `bark, car, car_alarm, fire_alarm, glass, package, person, speech, yell` — and none of the four appear. They were invented rather than observed.
+
+This is a **breaking change** and must be called out in the release notes. Blast radius, for anyone whose Frigate does emit one of them: the generic fallback (§4) still fires `Audio Detected` and records correctly-named history, so the detection is not lost — but the specific `Audio: Siren` / `Audio: Music` / `Audio: Car Horn` events no longer fire, and Composer programming bound to those events stops working.
+
+`Audio: Glass Breaking` and `GLASS_BREAKING_LAST_HEARD` are **kept** — they remain the target for the `glass` and `shatter` labels. Only the `glass_breaking` *label* is removed.
 
 ### 4. Unmapped labels
 
@@ -129,15 +138,27 @@ Until a label list arrives, the camera registers the canonical static set, so a 
 
 ### 6. New first-class labels
 
+Added:
+
 | Event | ID | Variables |
 |---|---|---|
 | `Package Detected` | 30 | `PACKAGE_DETECTED` (BOOL), `PACKAGE_LAST_SEEN` (STRING) |
 | `Package Left` | 31 | — |
 | `Audio: Car Alarm` | 32 | `CAR_ALARM_LAST_HEARD` (STRING) |
 
+Removed (see §3):
+
+| Event | ID | Variables removed |
+|---|---|---|
+| `Audio: Siren` | 22 | `SIREN_LAST_HEARD` |
+| `Audio: Car Horn` | 23 | `CAR_HORN_LAST_HEARD` |
+| `Audio: Music` | 24 | `MUSIC_LAST_HEARD` |
+
+Event IDs 22–24 are left **vacant rather than reused**. Renumbering existing events risks re-pointing Composer programming that is bound by identity, and the ids cost nothing.
+
 Packages persist, so they get boolean state — enabling "a package is present and nobody has been detected for 10 minutes". Audio types are momentary and follow the existing timestamp-only pattern.
 
-`driver.xml` grows from 29 to 32 events and from 29 to 32 variables. (Note: the README badge claims 27 variables and is already stale — correct it to 32 in the same change.)
+Net counts are unchanged: 29 events (three added, three removed) and 29 variables. The README badge claims 27 variables and is already stale — correct it to 29 in the same change.
 
 ### 7. Fallback and failure handling
 
@@ -188,7 +209,8 @@ The registration cross-check is the important one: it is what would have caught 
 
 The driver has external users on the `Beta` auto-update channel.
 
-- Anyone whose Frigate tracks only `person`/`car`/`dog`/`cat` sees no behavioural change.
+- **Breaking:** the `Audio: Siren`, `Audio: Car Horn` and `Audio: Music` events and their variables are removed. Detections still surface via the generic `Audio Detected` path with correct history, but programming bound to those three events stops firing. Must be announced in the release notes.
+- Anyone whose Frigate tracks only `person`/`car`/`dog`/`cat` sees no other behavioural change.
 - Anyone tracking additional labels starts receiving events that were previously dropped — strictly additive, and the point of the change.
 - `dog` and `cat` disappear from subscriptions where Frigate does not track them. No user-visible effect; their events remain declared in `driver.xml`.
 - A config-fetch failure reproduces today's behaviour exactly.
