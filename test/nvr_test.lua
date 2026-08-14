@@ -107,6 +107,22 @@ check("has_snapshot false forwarded as false",
       ev and ev.params.has_snapshot == false, ev and tostring(ev.params.has_snapshot))
 
 ------------------------------------------------------------------------
+-- Inverted payload: has_snapshot true in `before`, false in `after`.
+-- This is the one shape that discriminates a scoped `after`-only read
+-- from an unscoped whole-payload read (jsonBool matches only "key":true,
+-- so it would find the `before` true and forward the wrong value).
+------------------------------------------------------------------------
+sent = {}
+pcall(handleEventJSON, [[
+{"type":"update",
+ "before":{"id":"1755000001.0-inverted","camera":"bbq","label":"car","has_snapshot":true},
+ "after":{"id":"1755000001.0-inverted","camera":"bbq","label":"car","has_snapshot":false}}
+]])
+ev = findSent("FRIGATE_EVENT")
+check("has_snapshot read from `after` when `before` is true and `after` is false",
+      ev and ev.params.has_snapshot == false, ev and tostring(ev.params.has_snapshot))
+
+------------------------------------------------------------------------
 -- Malformed and empty payloads must not raise and must not send
 ------------------------------------------------------------------------
 sent = {}

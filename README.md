@@ -545,7 +545,7 @@ When a notification fires, the driver attaches the Frigate snapshot of the event
 | **Notification Image Freshness (seconds)** | `30` / `120` / `300` | Same, with a shorter or longer window |
 | **Notification Image Freshness (seconds)** | `Off` | Always use the camera's live snapshot |
 
-Events older than the window fall back to the live snapshot, so a motion notification never shows a person detected twenty minutes earlier. Motion, audio and camera-offline events have no Frigate event behind them and always use the live snapshot.
+Events older than the window fall back to the live snapshot, so a motion notification never shows a person detected twenty minutes earlier. The image reflects the most recent object detection within the freshness window regardless of which event type triggered the notification — so a motion or audio notification shortly after a detection will show that detection's snapshot, and only falls back to the live snapshot when no recent detection exists.
 
 > **Note:** The snapshot URL points at the Frigate host on your LAN, exactly as the live snapshot URL always has. Whether images load in notifications received away from home is unchanged by this feature.
 
