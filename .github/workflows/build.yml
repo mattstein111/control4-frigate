@@ -13,10 +13,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Lua
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
+        run: sudo apt-get update && sudo apt-get install -y luajit
 
-      - name: Run driver regression tests
-        run: lua test/driver_test.lua camera-driver/driver.lua
+      - name: Run driver regression tests (LuaJIT — matches the Control4 runtime)
+        run: luajit test/driver_test.lua camera-driver/driver.lua
 
       - name: Build .c4z drivers
         run: ./build.sh all
