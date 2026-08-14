@@ -120,6 +120,14 @@ local VAR = {
     MUSIC_LAST_HEARD          = "MUSIC_LAST_HEARD",
 }
 
+-- Last Frigate event seen for this camera, used to attach that event's
+-- snapshot to push notifications (#25). In-memory only: a driver reload
+-- falls back to the live snapshot until the next detection.
+local lastEvent = { id = nil, timestamp = 0, hasSnapshot = false }
+
+--- Test accessor. The driver's own code uses the local directly.
+function __lastEvent() return lastEvent end
+
 ------------------------------------------------------------------------
 -- Helpers
 ------------------------------------------------------------------------
@@ -811,6 +819,20 @@ function ExecuteCommand(sCommand, tParams)
         end
     elseif sCommand == "FRIGATE_DETECTION" then
         handleDetection(tParams or {})
+    elseif sCommand == "FRIGATE_EVENT" then
+        local p = tParams or {}
+        if p.event_id and p.event_id ~= "" then
+            -- SendToDevice serialises booleans as strings; "false" is truthy
+            -- in Lua, so check explicitly (see c4-conventions §2).
+            local raw = p.has_snapshot
+            local hasSnapshot = (raw ~= false and raw ~= "false" and raw ~= "False"
+                                 and raw ~= 0 and raw ~= "0" and raw ~= nil)
+            lastEvent.id          = p.event_id
+            lastEvent.hasSnapshot = hasSnapshot
+            lastEvent.timestamp   = os.time()
+            log(LOG_DEBUG, "Cached event " .. p.event_id
+                .. " (snapshot=" .. tostring(hasSnapshot) .. ")")
+        end
     elseif sCommand == "FRIGATE_MOTION" then
         handleMotion(tParams or {})
     elseif sCommand == "FRIGATE_ZONE" then

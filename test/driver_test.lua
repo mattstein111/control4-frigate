@@ -158,5 +158,30 @@ ok, err = pcall(ExecuteCommand, "FRIGATE_HEALTH", { online = false })
 check("handleHealth does not raise", ok, err)
 check("CAMERA_ONLINE == false", vars.CAMERA_ONLINE == "false", vars.CAMERA_ONLINE)
 
+------------------------------------------------------------------------
+-- FRIGATE_EVENT caches the last event (#25)
+------------------------------------------------------------------------
+ok, err = pcall(ExecuteCommand, "FRIGATE_EVENT",
+    { event_id = "1755012345.678901-abc123", has_snapshot = true, label = "person" })
+check("FRIGATE_EVENT does not raise", ok, err)
+
+local le = __lastEvent()
+check("cached the event id", le.id == "1755012345.678901-abc123", le.id)
+check("cached hasSnapshot", le.hasSnapshot == true, tostring(le.hasSnapshot))
+check("stamped a timestamp", type(le.timestamp) == "number" and le.timestamp > 0, le.timestamp)
+
+-- has_snapshot arrives as the STRING "false" over SendToDevice, which is
+-- truthy in Lua — the classic C4 serialisation trap.
+ok, err = pcall(ExecuteCommand, "FRIGATE_EVENT",
+    { event_id = "1755000000.0-nosnap", has_snapshot = "false", label = "car" })
+le = __lastEvent()
+check("string 'false' has_snapshot treated as false", le.hasSnapshot == false,
+      tostring(le.hasSnapshot))
+
+-- A missing event_id must not clobber the cache.
+pcall(ExecuteCommand, "FRIGATE_EVENT", { has_snapshot = true })
+le = __lastEvent()
+check("missing event_id leaves the cache intact", le.id == "1755000000.0-nosnap", le.id)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
