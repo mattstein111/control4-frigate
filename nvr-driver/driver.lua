@@ -714,8 +714,8 @@ local function adoptOrphanCameras()
     local myDeviceId = C4:GetDeviceID()
     local orphanCount = 0
 
-    for devId, _ in pairs(existingDevices) do
-        devId = tonumber(devId)
+    for rawId, _ in pairs(existingDevices) do
+        local devId = tonumber(rawId)
         if devId and not managedDeviceIds[devId] then
             -- Ask this camera to identify itself
             C4:SendToDevice(devId, "IDENTIFY_CAMERA", {
