@@ -16,7 +16,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y luajit
 
       - name: Run driver regression tests (LuaJIT — matches the Control4 runtime)
-        run: luajit test/driver_test.lua camera-driver/driver.lua
+        run: |
+          luajit test/driver_test.lua camera-driver/driver.lua
+          luajit test/nvr_test.lua nvr-driver/driver.lua
 
       - name: Build .c4z drivers
         run: ./build.sh all

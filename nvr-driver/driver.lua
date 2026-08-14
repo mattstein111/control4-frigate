@@ -255,6 +255,14 @@ local function jsonBool(json, key)
     return json:match(pattern) ~= nil
 end
 
+--- Extract the `after` object from a frigate/events payload.
+--- Event payloads carry both `before` and `after`; fields that change as the
+--- event matures (notably has_snapshot) must be read from `after`. The plain
+--- json* helpers match the FIRST occurrence, which falls inside `before`.
+local function jsonAfterObject(json)
+    return json:match('"after"%s*:%s*(%b{})')
+end
+
 ------------------------------------------------------------------------
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------
@@ -334,6 +342,21 @@ function handleEventJSON(payload)
         for zone in zonesStr:gmatch('"([^"]+)"') do
             table.insert(zones, zone)
         end
+    end
+
+    -- Forward the Frigate event id so the camera driver can attach this
+    -- event's snapshot to push notifications (#25).
+    local eventId = jsonString(payload, "id")
+    if eventId then
+        local after = jsonAfterObject(payload)
+        local hasSnapshot = after and jsonBool(after, "has_snapshot") or false
+        sendToCamera(camera, "FRIGATE_EVENT", {
+            event_id     = eventId,
+            has_snapshot = hasSnapshot,
+            label        = label or "object",
+        })
+        log(LOG_TRACE, "Event " .. eventId .. " on " .. camera
+            .. " (snapshot=" .. tostring(hasSnapshot) .. ")")
     end
 
     if loitering and #zones > 0 then
