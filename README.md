@@ -273,23 +273,25 @@ Manual trigger available in the Actions tab. When **Auto Update** is `Off`, it p
 - Camera accessible from the room where it's assigned
 - Standard Control4 camera viewer UI
 
-### Audio — Not Currently Supported
+### Audio — Working, With a Caveat
 
-**In-stream audio playback does not currently work in the Control4 app**, even when cameras output a Control4-compatible codec. This is a known limitation of this driver's current integration path with Frigate/go2rtc — not a bug in your setup.
+**In-stream audio plays in the Control4 app** when the camera's audio reaches Control4 as **G.711 μ-law (PCMU) at 8 kHz**. Control4 OS 3.4.2 or newer is required. G.711 A-law (PCMA) and AAC are not supported — per Control4's Camera Agent specification.
 
-**What we confirmed during investigation** (v0.8.11-beta):
+**The important detail: pass PCMU through, don't transcode it.** Audio works when the camera itself emits PCMU and go2rtc copies the stream (`-c:a copy`). It did **not** work when go2rtc transcoded some other codec to PCMU via an `#audio=pcmu` source directive — Navigator showed the audio icon but played no sound.
 
-- Control4 OS 3.4.2+ supports camera audio, and the required codec is **G.711 μ-law (PCMU) at 8 kHz** (per Control4's Camera Agent specification — G.711 A-law / PCMA and AAC are not supported).
-- go2rtc can transcode any camera's audio to PCMU/8000 via `#audio=pcmu` in the source definition.
-- After transcoding, VLC and ffmpeg play the go2rtc-served audio correctly, confirming the stream is well-formed PCMU.
-- The Control4 iOS app displays the audio icon on the camera tile (so Navigator is parsing the SDP and recognizing the audio track)…
-- …but no sound is rendered during live view.
+So if you have no audio:
 
-**Suspected cause:** go2rtc's RTSP server emits PCMU on dynamic RTP payload type 97 with an `a=rtpmap:97 PCMU/8000` declaration, rather than the RFC 3551 static payload type 0. VLC and ffmpeg honor the rtpmap; Control4's RTSP client appears to not, silently dropping the audio packets it can't map to a known codec. The `a=recvonly` direction attribute go2rtc adds to the SDP may also play a role, though the icon's appearance suggests Navigator parsed past that fine.
+1. **Configure the camera to output G.711 μ-law natively**, if it supports it. Many cameras offer PCMU/G.711u as an audio option in their web UI, sometimes on a secondary stream profile.
+2. **Let go2rtc pass it through** rather than re-encoding. Avoid `#audio=pcmu` on a source whose audio is already something else — that path produced silence.
+3. **Confirm what is actually being served** before blaming Control4:
+   ```sh
+   ffprobe -rtsp_transport tcp rtsp://<frigate-host>:8554/<camera>
+   ```
+   You want `Audio: pcm_mulaw, 8000 Hz`.
 
-We don't yet have a workaround. Possible future paths: relay go2rtc's output through MediaMTX (which uses static PT 0 for PCMU), point the driver at camera native RTSP URLs that emit PCMU with static PT 0 (only works for cameras without unusual digest auth), or have Control4 fix their RTSP client's handling of dynamic PT for G.711.
+**Note on payload types.** go2rtc advertises PCMU on dynamic RTP payload type 97 (`a=rtpmap:97 PCMU/8000`) rather than the RFC 3551 static type 0. This was previously suspected of being the blocker; it is not — audio plays with PT 97. If audio is failing for you, look at whether the stream is transcoded rather than at the payload type.
 
-The audio-detection events (Speech / Bark / Scream / etc.) are unaffected — those flow via MQTT and work correctly regardless of live-audio playback.
+Audio-detection events (Speech / Bark / Scream, etc.) are entirely separate — they flow via MQTT and work regardless of whether live audio plays.
 
 ### In the Control4 App History
 Every detection event is logged with a timestamp and appears both in the History agent and in the Control4 app:
