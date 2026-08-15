@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+> **Not released.** These changes are on `main` but deliberately unpublished — there is no GitHub release or tag, so no installation will auto-update to them. See "Known gap" below.
+
+### Fixed
+
+- **Detections that Frigate was configured to produce were silently discarded (#28, #29).** The driver hardcoded which detection labels it subscribed to over MQTT — four object types and nine audio types — while Frigate's actual labels come from its own per-camera configuration. On a live 13-camera system this meant `package` detections at the front door, plus `glass`, `shatter` and `car_alarm`, never reached Control4 at all: no event, no history entry, no log line. Both the subscription set and the handler whitelist are now derived from one label set read from Frigate's config during discovery, so they cannot drift apart. Any label Frigate is configured to detect now reaches Control4, and unrecognised labels fire the generic `Object Detected` / `Audio Detected` events with a properly named history entry rather than being dropped.
+
+- **Three audio history entries were recorded but never displayed in the Control4 app.** `handleAudio()` built its history type by capitalising only the first character, recording `Audio: Fire alarm` while the History agent registration said `Audio: Fire Alarm`. Control4's Navigator renders history only when the recorded type matches a registration exactly, so `fire_alarm`, `glass_breaking` and `car_horn` entries were stored and invisible. Event names, history types and registrations now all derive from one canonical table and cannot disagree.
+
+### Added
+
+- **`Package Detected` and `Package Left` events**, with `PACKAGE_DETECTED` (boolean) and `PACKAGE_LAST_SEEN` (timestamp) variables. Packages persist, so the boolean supports conditions such as "a package is present and nobody has been detected for ten minutes".
+- **`Audio: Car Alarm` event** with `CAR_ALARM_LAST_HEARD`. Deliberately separate from any car-horn concept — a car alarm is a security event.
+- **`glass` and `shatter` both map to `Audio: Glass Breaking`**, sharing `GLASS_BREAKING_LAST_HEARD`; the distinction is acoustic rather than meaningful.
+- **The resolved label sets are logged at INFO on startup**, e.g. `Subscribed to objects: car, package, person | audio: bark, car_alarm, ...`. Every defect above was invisible partly because nothing ever stated what the driver was listening for.
+- **Regression tests for all of the above**, in the committed harnesses that run in CI under LuaJIT.
+
+### Removed
+
+- **BREAKING (unreleased): `Audio: Siren`, `Audio: Car Horn` and `Audio: Music` and their `SIREN_LAST_HEARD`, `CAR_HORN_LAST_HEARD` and `MUSIC_LAST_HEARD` variables.** `/api/labels` on a live system lists only labels Frigate has actually recorded events for, and none of these three appeared — they were invented rather than observed. If a Frigate configuration does emit one of them, the detection still reaches Control4 via the generic `Audio Detected` event with a correctly named history entry, but programming bound to the three removed events would stop firing. Event ids 22–24 are left vacant; no other event was renumbered.
+
+### Known gap — why this is unreleased
+
+Per-camera history registration is lost on any solo camera-driver restart. The NVR only sends each camera its label list during adoption or a manual **Discover Cameras** / **Sync Camera Names** action; its own startup never resends to already-managed cameras. After a camera hot-reload — including the auto-update self-install flow — a previously working camera falls back to registering only the static event types, so `Person Detected`, `Package Detected` and the specific `Audio: *` history types become recorded-but-unregistered, and therefore invisible in the Control4 app.
+
+Candidate fixes, in rough order of preference: have the camera driver persist its label list with `PersistSetValue` and restore it at `OnDriverLateInit`; have the NVR resend config to all managed cameras on its own init; or have the camera request its config from the NVR at init.
+
 ## [0.9.0-rc.1] - 2026-08-14
 
 ### Changed

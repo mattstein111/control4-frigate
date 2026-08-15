@@ -6,7 +6,7 @@
 ![Frigate](https://img.shields.io/badge/Frigate-0.14%2B-blue)
 ![Cameras](https://img.shields.io/badge/Cameras-Unlimited-brightgreen)
 ![Events](https://img.shields.io/badge/Events-29%20Types-purple)
-![Variables](https://img.shields.io/badge/Variables-27-cyan)
+![Variables](https://img.shields.io/badge/Variables-29-cyan)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -348,6 +348,8 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Car Left** | All cars have left |
 | **Dog Detected** | A dog appears |
 | **Cat Detected** | A cat appears |
+| **Package Detected** | A package appears |
+| **Package Left** | A previously detected package is no longer present |
 | **Object Detected** | Any object detected (generic catch-all) |
 | **Object Left** | An object type's count drops to zero |
 | **Motion Detected** | Motion is detected |
@@ -363,9 +365,7 @@ These events are available in Composer Pro under each camera's **Events** tab:
 | **Audio: Yell** | Yell audio detected |
 | **Audio: Fire Alarm** | Fire alarm sound detected |
 | **Audio: Glass Breaking** | Glass breaking sound detected |
-| **Audio: Siren** | Siren sound detected |
-| **Audio: Car Horn** | Car horn sound detected |
-| **Audio: Music** | Music audio detected |
+| **Audio: Car Alarm** | Car alarm sound detected |
 | **Audio Detected** | Any audio event detected (generic catch-all) |
 | **Detection Enabled** | Object detection turned on for this camera |
 | **Detection Disabled** | Object detection turned off for this camera |
@@ -382,6 +382,7 @@ Available under each camera for conditional programming:
 | `CAR_DETECTED` | Boolean | "If car detected, open garage" |
 | `DOG_DETECTED` | Boolean | "If dog detected, sound chime" |
 | `CAT_DETECTED` | Boolean | "If cat detected, close pet door" |
+| `PACKAGE_DETECTED` | Boolean | "If package detected, send notification" |
 | `MOTION_DETECTED` | Boolean | "If motion detected, keep lights on" |
 | `CAMERA_ONLINE` | Boolean | "If camera offline, send alert" |
 | `DETECTION_ENABLED` | Boolean | "If detection disabled, send alert" |
@@ -393,6 +394,7 @@ Available under each camera for conditional programming:
 | `CAR_LAST_SEEN` | String | Timestamp of last car detection |
 | `DOG_LAST_SEEN` | String | Timestamp of last dog detection |
 | `CAT_LAST_SEEN` | String | Timestamp of last cat detection |
+| `PACKAGE_LAST_SEEN` | String | "Show when a package last arrived" |
 | `MOTION_LAST_SEEN` | String | Timestamp of last motion |
 | `LOITERING_LAST_SEEN` | String | Timestamp of last loitering event |
 | `AUDIO_LAST_HEARD` | String | Timestamp of last audio event |
@@ -402,9 +404,7 @@ Available under each camera for conditional programming:
 | `YELL_LAST_HEARD` | String | Timestamp of last yell |
 | `FIRE_ALARM_LAST_HEARD` | String | Timestamp of last fire alarm |
 | `GLASS_BREAKING_LAST_HEARD` | String | Timestamp of last glass breaking |
-| `SIREN_LAST_HEARD` | String | Timestamp of last siren |
-| `CAR_HORN_LAST_HEARD` | String | Timestamp of last car horn |
-| `MUSIC_LAST_HEARD` | String | Timestamp of last music detection |
+| `CAR_ALARM_LAST_HEARD` | String | "Show when a car alarm last sounded" |
 
 ---
 
@@ -550,6 +550,20 @@ When a notification fires, the driver attaches the Frigate snapshot of the event
 Events older than the window fall back to the live snapshot, so a motion notification never shows a person detected twenty minutes earlier. The image reflects the most recent object detection within the freshness window regardless of which event type triggered the notification — so a motion or audio notification shortly after a detection will show that detection's snapshot, and only falls back to the live snapshot when no recent detection exists.
 
 > **Note:** The snapshot URL points at the Frigate host on your LAN, exactly as the live snapshot URL always has. Whether images load in notifications received away from home is unchanged by this feature.
+
+### Which detections reach Control4
+
+The driver subscribes to exactly the detection labels your Frigate is configured to produce. It reads `objects.track` and `audio.listen` from Frigate's own configuration — including per-camera overrides — when it discovers cameras.
+
+If you add a label in Frigate (say `package` on a porch camera), restart Frigate and then run **Discover Cameras** in Composer to pick it up. The driver logs what it resolved at startup:
+
+```
+Subscribed to objects: car, package, person | audio: bark, car_alarm, fire_alarm, glass, scream, shatter, speech, yell
+```
+
+Labels with a dedicated event — `person`, `car`, `dog`, `cat`, `package`, and the audio types — fire that event. Any other label fires the generic `Object Detected` / `Audio Detected` event and records history under its own name, so nothing is lost.
+
+If Frigate's configuration cannot be read, the driver falls back to a built-in label list and logs a warning.
 
 ### Debugging
 
