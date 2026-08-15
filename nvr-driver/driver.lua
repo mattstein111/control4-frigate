@@ -318,10 +318,17 @@ end
 -- ~1/second per camera and they would flood Last Event (issue #23).
 local AUDIO_TELEMETRY = { rms = true, dBFS = true, state = true }
 
--- Fallback label sets, used when the Frigate config cannot be read. These
--- reproduce the pre-config-driven behaviour exactly.
-local FALLBACK_OBJECT_LABELS = { "person", "car", "dog", "cat" }
-local FALLBACK_AUDIO_LABELS  = { "speech", "bark", "scream", "yell", "fire_alarm" }
+-- Fallback label sets, used when the Frigate config cannot be read. This is
+-- the widest safe set for that failure case — we have no idea what the
+-- system actually detects, so err toward over-subscribing rather than
+-- silently dropping detections (the bug this change exists to fix). Do not
+-- narrow these; they mirror the canonical labels the camera driver maps.
+-- The four legacy labels (glass_breaking, siren, car_horn, music) are
+-- deliberately excluded — Frigate's /api/labels shows it has never emitted
+-- them.
+local FALLBACK_OBJECT_LABELS = { "person", "car", "dog", "cat", "package" }
+local FALLBACK_AUDIO_LABELS  = { "speech", "bark", "scream", "yell", "fire_alarm",
+                                 "glass", "shatter", "car_alarm" }
 
 RESOLVED_OBJECT_LABELS = FALLBACK_OBJECT_LABELS
 RESOLVED_AUDIO_LABELS  = FALLBACK_AUDIO_LABELS
