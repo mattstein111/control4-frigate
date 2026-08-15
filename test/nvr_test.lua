@@ -232,5 +232,31 @@ check("package count message is forwarded", pk ~= nil)
 check("forwarded with the right object type", pk and pk.params.object_type == "package",
       pk and pk.params.object_type)
 
+-- The zone branch (frigate/<camera>/<zone>/<object>) has the same
+-- resolved-set filter as the object branch above but was previously
+-- untested end to end — a mutation there would pass silently otherwise.
+sent = {}
+handleMQTTForTest("frigate/bbq/driveway/package", "1")
+local zn = findSent("FRIGATE_ZONE")
+check("zone count message is forwarded", zn ~= nil)
+check("forwarded with the right zone", zn and zn.params.zone == "driveway", zn and zn.params.zone)
+check("forwarded with the right object type", zn and zn.params.object_type == "package",
+      zn and zn.params.object_type)
+
+-- The fallback label sets are what the driver uses when Frigate's config
+-- cannot be read — pin their contents so a future edit can't silently
+-- narrow them back (that exact regression, dropping "package", is #29).
+local fbObj, fbAud = getFallbackLabels()
+check("fallback objects include package", has(fbObj, "package"))
+check("fallback objects include the original four",
+      has(fbObj, "person") and has(fbObj, "car") and has(fbObj, "dog") and has(fbObj, "cat"))
+check("fallback audio includes glass, shatter, car_alarm",
+      has(fbAud, "glass") and has(fbAud, "shatter") and has(fbAud, "car_alarm"))
+check("fallback audio includes the original five",
+      has(fbAud, "speech") and has(fbAud, "bark") and has(fbAud, "scream")
+      and has(fbAud, "yell") and has(fbAud, "fire_alarm"))
+check("fallback audio never contains telemetry",
+      not has(fbAud, "rms") and not has(fbAud, "dBFS"))
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)

@@ -330,6 +330,11 @@ local FALLBACK_OBJECT_LABELS = { "person", "car", "dog", "cat", "package" }
 local FALLBACK_AUDIO_LABELS  = { "speech", "bark", "scream", "yell", "fire_alarm",
                                  "glass", "shatter", "car_alarm" }
 
+--- Test accessor: expose the fallback label sets without making them global state.
+function getFallbackLabels()
+    return FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS
+end
+
 RESOLVED_OBJECT_LABELS = FALLBACK_OBJECT_LABELS
 RESOLVED_AUDIO_LABELS  = FALLBACK_AUDIO_LABELS
 
