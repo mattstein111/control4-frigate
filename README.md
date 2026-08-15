@@ -6,7 +6,7 @@
 ![Frigate](https://img.shields.io/badge/Frigate-0.14%2B-blue)
 ![Cameras](https://img.shields.io/badge/Cameras-Unlimited-brightgreen)
 ![Events](https://img.shields.io/badge/Events-29%20Types-purple)
-![Variables](https://img.shields.io/badge/Variables-29-cyan)
+![Variables](https://img.shields.io/badge/Variables-27-cyan)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
