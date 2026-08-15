@@ -258,5 +258,33 @@ check("fallback audio includes the original five",
 check("fallback audio never contains telemetry",
       not has(fbAud, "rms") and not has(fbAud, "dBFS"))
 
+------------------------------------------------------------------------
+-- Per-camera label forwarding (#28, #29)
+------------------------------------------------------------------------
+RESOLVED_PER_CAMERA = {
+    bbq        = { objects = {"person"},          audio = {"bark","speech"} },
+    front_door = { objects = {"package","person"}, audio = {"bark","glass","speech"} },
+}
+
+sent = {}
+sendCameraConfigForTest("front_door", 1586)
+local cfg = findSent("SET_FRIGATE_CONFIG")
+check("sends SET_FRIGATE_CONFIG", cfg ~= nil)
+check("object_labels is a comma-separated string",
+      cfg and cfg.params.object_labels == "package,person", cfg and cfg.params.object_labels)
+check("audio_labels is a comma-separated string",
+      cfg and cfg.params.audio_labels == "bark,glass,speech", cfg and cfg.params.audio_labels)
+check("existing params still present",
+      cfg and cfg.params.camera_name == "front_door" and cfg.params.host ~= nil)
+
+-- A camera absent from the resolved map must still get a usable config.
+sent = {}
+sendCameraConfigForTest("unknown_cam", 1600)
+local cfg2 = findSent("SET_FRIGATE_CONFIG")
+check("unknown camera still receives config", cfg2 ~= nil)
+check("unknown camera gets empty label lists",
+      cfg2 and cfg2.params.object_labels == "" and cfg2.params.audio_labels == "",
+      cfg2 and cfg2.params.object_labels)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)

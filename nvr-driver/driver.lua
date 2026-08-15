@@ -353,6 +353,9 @@ function setResolvedLabels(objectLabels, audioLabels)
 end
 setResolvedLabels(FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS)
 
+-- Per-camera resolved labels, populated during discovery. Keyed by camera name.
+RESOLVED_PER_CAMERA = {}
+
 --- Build the full MQTT topic list for the given resolved labels.
 function buildSubscriptionTopics(objectLabels, audioLabels)
     local topics = {
@@ -678,9 +681,10 @@ local function fetchCameras(callback)
             return
         end
 
-        local objU, audU = parseDetectionLabels(strData)
+        local objU, audU, perCam = parseDetectionLabels(strData)
         if objU then
             setResolvedLabels(objU, audU)
+            RESOLVED_PER_CAMERA = perCam or {}
         else
             log(LOG_WARNING, "Could not read detection labels from Frigate config — "
                 .. "falling back to the built-in label list; some detections may not reach Control4")
@@ -845,6 +849,25 @@ local function adoptOrphanCameras()
     end
 end
 
+--- Send configuration to a camera driver, including that camera's own
+--- detection labels. SendToDevice serialises params as strings, so the
+--- label lists cross as comma-separated strings, not tables.
+--- useSub, if given, overrides the global "Use Sub Streams" property (the
+--- discovery loop auto-detects per camera whether a sub-stream exists).
+local function sendCameraConfig(camName, devId, useSub)
+    local info = RESOLVED_PER_CAMERA[camName] or { objects = {}, audio = {} }
+    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
+        host           = Properties[PROP_HOST] or "",
+        camera_name    = camName,
+        use_sub_stream = useSub or Properties[PROP_SUB] or "Yes",
+        object_labels  = table.concat(info.objects or {}, ","),
+        audio_labels   = table.concat(info.audio   or {}, ","),
+    })
+end
+
+--- Test accessor.
+function sendCameraConfigForTest(camName, devId, useSub) return sendCameraConfig(camName, devId, useSub) end
+
 --- Handle ADOPT_RESPONSE from a camera identifying itself.
 local function handleAdoptResponse(tParams)
     local camName = tParams and tParams.camera_name or ""
@@ -868,13 +891,7 @@ local function handleAdoptResponse(tParams)
     saveManagedCameras(managed)
 
     -- Send current config to the adopted camera
-    local host = Properties[PROP_HOST] or ""
-    local useSub = Properties[PROP_SUB] or "Yes"
-    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
-        host = host,
-        camera_name = camName,
-        use_sub_stream = useSub
-    })
+    sendCameraConfig(camName, devId)
 
     log(LOG_INFO, "Adopted orphan camera: " .. camName .. " (device " .. devId .. ")")
 end
@@ -896,7 +913,6 @@ local function discoverCameras()
 
         hasSubStream = hasSubStream or {}
         local managed = getManagedCameras()
-        local host = Properties[PROP_HOST] or ""
         local globalUseSub = Properties[PROP_SUB] or "Yes"
         local added = 0
         local skipped = 0
@@ -912,11 +928,7 @@ local function discoverCameras()
             if managed[camName] then
                 local devId = managed[camName].deviceId
                 if devId and devId > 0 then
-                    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
-                        host = host,
-                        camera_name = camName,
-                        use_sub_stream = useSub
-                    })
+                    sendCameraConfig(camName, devId, useSub)
                 end
                 skipped = skipped + 1
             else
@@ -944,11 +956,7 @@ local function discoverCameras()
 
                     saveManagedCameras(managed)
 
-                    C4:SendToDevice(deviceId, "SET_FRIGATE_CONFIG", {
-                        host = host,
-                        camera_name = camName,
-                        use_sub_stream = useSub
-                    })
+                    sendCameraConfig(camName, deviceId, useSub)
 
                     log(LOG_INFO, "Added camera: " .. camName .. " (device " .. deviceId .. ")")
                 end)
