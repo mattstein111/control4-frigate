@@ -414,13 +414,13 @@ local function handleDetection(tParams)
             recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
     else
-        -- Generic object
+        local info = labelInfo(objType, "object")
         if count > 0 and eventType == "new" then
             fireEvent("Object Detected")
-            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
+            recordHistory(info.detected, "Info", info.detected)
         elseif count == 0 then
             fireEvent("Object Left")
-            recordHistory(friendly .. " left", "Info", friendly .. " Left")
+            recordHistory(info.left, "Info", info.left)
         end
     end
 
@@ -505,50 +505,73 @@ end
 -- Audio Detection Handler
 ------------------------------------------------------------------------
 
---- Map Frigate audio type names to event names.
-local AUDIO_EVENTS = {
-    speech         = "Audio: Speech",
-    bark           = "Audio: Bark",
-    scream         = "Audio: Scream",
-    yell           = "Audio: Yell",
-    fire_alarm     = "Audio: Fire Alarm",
-    glass_breaking = "Audio: Glass Breaking",
-    siren          = "Audio: Siren",
-    car_horn       = "Audio: Car Horn",
-    music          = "Audio: Music",
+--- Title-case a Frigate label: "fire_hydrant" -> "Fire Hydrant".
+function friendlyLabel(label)
+    if not label or label == "" then return "Object" end
+    local words = {}
+    for w in tostring(label):gmatch("[^_%s]+") do
+        words[#words + 1] = w:sub(1, 1):upper() .. w:sub(2)
+    end
+    return table.concat(words, " ")
+end
+
+--- Canonical mapping from Frigate label to friendly name, event and variable.
+--- This is the ONLY source for the fired event, the recorded history type and
+--- the registration, so those three cannot disagree (#28, #29).
+OBJECT_LABELS = {
+    person  = { friendly = "Person",  detected = "Person Detected",  left = "Person Left",
+                var_bool = "PERSON_DETECTED",  var_seen = "PERSON_LAST_SEEN",  var_count = "PERSON_COUNT" },
+    car     = { friendly = "Car",     detected = "Car Detected",     left = "Car Left",
+                var_bool = "CAR_DETECTED",     var_seen = "CAR_LAST_SEEN",     var_count = "CAR_COUNT" },
+    dog     = { friendly = "Dog",     detected = "Dog Detected",     left = "Object Left",
+                var_bool = "DOG_DETECTED",     var_seen = "DOG_LAST_SEEN" },
+    cat     = { friendly = "Cat",     detected = "Cat Detected",     left = "Object Left",
+                var_bool = "CAT_DETECTED",     var_seen = "CAT_LAST_SEEN" },
+    package = { friendly = "Package", detected = "Package Detected", left = "Package Left",
+                var_bool = "PACKAGE_DETECTED", var_seen = "PACKAGE_LAST_SEEN" },
 }
+
+AUDIO_LABELS = {
+    speech     = { friendly = "Speech",         event = "Audio: Speech",         var = "SPEECH_LAST_HEARD" },
+    bark       = { friendly = "Bark",           event = "Audio: Bark",           var = "BARK_LAST_HEARD" },
+    scream     = { friendly = "Scream",         event = "Audio: Scream",         var = "SCREAM_LAST_HEARD" },
+    yell       = { friendly = "Yell",           event = "Audio: Yell",           var = "YELL_LAST_HEARD" },
+    fire_alarm = { friendly = "Fire Alarm",     event = "Audio: Fire Alarm",     var = "FIRE_ALARM_LAST_HEARD" },
+    glass      = { friendly = "Glass Breaking", event = "Audio: Glass Breaking", var = "GLASS_BREAKING_LAST_HEARD" },
+    shatter    = { friendly = "Glass Breaking", event = "Audio: Glass Breaking", var = "GLASS_BREAKING_LAST_HEARD" },
+    car_alarm  = { friendly = "Car Alarm",      event = "Audio: Car Alarm",      var = "CAR_ALARM_LAST_HEARD" },
+}
+
+--- Look up a label. Never returns nil: unmapped labels get a generated entry
+--- routed to the generic event, so a detection is never silently dropped.
+function labelInfo(label, kind)
+    if kind == "audio" then
+        local e = AUDIO_LABELS[label]
+        if e then return e end
+        return { friendly = friendlyLabel(label), event = "Audio Detected" }
+    end
+    local e = OBJECT_LABELS[label]
+    if e then return e end
+    local f = friendlyLabel(label)
+    return { friendly = f, detected = f .. " Detected", left = f .. " Left" }
+end
 
 --- Handle audio detection from Frigate.
 --- tParams: { audio_type="speech" }
 local function handleAudio(tParams)
     local audioType = tParams.audio_type or "unknown"
-    local friendly = friendlyObject(audioType:gsub("_", " "))
+    local info = labelInfo(audioType, "audio")
     local ts = timestamp()
 
-    -- Update last-heard timestamps
     setVar(VAR.AUDIO_LAST_HEARD, ts)
-    local AUDIO_LAST_HEARD_VARS = {
-        speech         = VAR.SPEECH_LAST_HEARD,
-        bark           = VAR.BARK_LAST_HEARD,
-        scream         = VAR.SCREAM_LAST_HEARD,
-        yell           = VAR.YELL_LAST_HEARD,
-        fire_alarm     = VAR.FIRE_ALARM_LAST_HEARD,
-        glass_breaking = VAR.GLASS_BREAKING_LAST_HEARD,
-        siren          = VAR.SIREN_LAST_HEARD,
-        car_horn       = VAR.CAR_HORN_LAST_HEARD,
-        music          = VAR.MUSIC_LAST_HEARD,
-    }
-    if AUDIO_LAST_HEARD_VARS[audioType] then
-        setVar(AUDIO_LAST_HEARD_VARS[audioType], ts)
-    end
+    if info.var and VAR[info.var] then setVar(VAR[info.var], ts) end
 
-    local eventName = AUDIO_EVENTS[audioType]
-    if eventName then
-        fireEvent(eventName)
-    end
+    if info.event ~= "Audio Detected" then fireEvent(info.event) end
     fireEvent("Audio Detected")
-    recordHistory("Audio: " .. friendly, "Info", "Audio: " .. friendly)
-    C4:UpdateProperty(PROP_LAST_EVENT, "Audio: " .. friendly .. " — " .. ts)
+
+    local label = "Audio: " .. info.friendly
+    recordHistory(label, "Info", label)
+    C4:UpdateProperty(PROP_LAST_EVENT, label .. " — " .. ts)
 end
 
 ------------------------------------------------------------------------

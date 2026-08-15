@@ -233,5 +233,51 @@ Properties["Frigate Host"] = ""
 check("unset host returns empty string", GetNotificationAttachmentURL(1001, {}) == "")
 Properties["Frigate Host"] = savedHost
 
+------------------------------------------------------------------------
+-- Canonical label mapping and the generic path (#28, #29)
+------------------------------------------------------------------------
+check("friendlyLabel title-cases every word", friendlyLabel("fire_hydrant") == "Fire Hydrant",
+      friendlyLabel("fire_hydrant"))
+check("friendlyLabel handles a single word", friendlyLabel("bicycle") == "Bicycle")
+
+local gi = labelInfo("glass", "audio")
+check("glass maps to Audio: Glass Breaking", gi.event == "Audio: Glass Breaking", gi.event)
+check("glass uses the glass-breaking variable", gi.var == "GLASS_BREAKING_LAST_HEARD", gi.var)
+local sh = labelInfo("shatter", "audio")
+check("shatter shares the glass event", sh.event == "Audio: Glass Breaking", sh.event)
+check("shatter shares the glass variable", sh.var == "GLASS_BREAKING_LAST_HEARD", sh.var)
+local ca = labelInfo("car_alarm", "audio")
+check("car_alarm is its own event", ca.event == "Audio: Car Alarm", ca.event)
+check("car_alarm has its own variable", ca.var == "CAR_ALARM_LAST_HEARD", ca.var)
+
+check("removed label siren is no longer mapped", labelInfo("siren", "audio").event == "Audio Detected",
+      labelInfo("siren", "audio").event)
+local unk = labelInfo("didgeridoo", "audio")
+check("unmapped audio falls back to the generic event", unk.event == "Audio Detected", unk.event)
+check("unmapped audio has a friendly name", unk.friendly == "Didgeridoo", unk.friendly)
+check("unmapped audio has no variable", unk.var == nil)
+
+local bike = labelInfo("bicycle", "object")
+check("unmapped object gets a generated detected name", bike.detected == "Bicycle Detected", bike.detected)
+check("unmapped object gets a generated left name", bike.left == "Bicycle Left", bike.left)
+check("unmapped object has no variables", bike.var_bool == nil and bike.var_seen == nil)
+
+-- Title-case regression: fire_alarm history must match its registration exactly.
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_AUDIO", { audio_type = "fire_alarm" })
+local fh = history[1]
+check("fire_alarm history type is title-cased", fh and fh.etype == "Audio: Fire Alarm", fh and fh.etype)
+check("fire_alarm history type is registered", fh and registeredTypes[fh.etype] == true, fh and fh.etype)
+
+-- An unmapped object must reach the generic branch that was previously dead code.
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_DETECTION",
+      { object_type = "bicycle", count = 1, event_type = "new" })
+local fired = {}
+for _, e in ipairs(events) do fired[e] = true end
+check("unmapped object fires the generic event", fired["Object Detected"] == true)
+check("unmapped object records a named history entry",
+      history[1] and history[1].etype == "Bicycle Detected", history[1] and history[1].etype)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
