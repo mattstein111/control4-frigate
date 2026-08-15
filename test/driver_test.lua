@@ -279,5 +279,48 @@ check("unmapped object fires the generic event", fired["Object Detected"] == tru
 check("unmapped object records a named history entry",
       history[1] and history[1].etype == "Bicycle Detected", history[1] and history[1].etype)
 
+------------------------------------------------------------------------
+-- Package and car alarm (#28, #29)
+------------------------------------------------------------------------
+events, history = {}, {}
+local okp = pcall(ExecuteCommand, "FRIGATE_DETECTION",
+    { object_type = "package", count = 1, event_type = "new" })
+check("package detection does not raise", okp)
+check("PACKAGE_DETECTED set true", vars.PACKAGE_DETECTED == "true", vars.PACKAGE_DETECTED)
+check("PACKAGE_LAST_SEEN populated", (vars.PACKAGE_LAST_SEEN or "") ~= "")
+local pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("fires Package Detected", pf["Package Detected"] == true)
+check("also fires Object Detected", pf["Object Detected"] == true)
+check("package history type is 'Package Detected'",
+      history[1] and history[1].etype == "Package Detected", history[1] and history[1].etype)
+
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_DETECTION", { object_type = "package", count = 0, event_type = "end" })
+pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("PACKAGE_DETECTED set false", vars.PACKAGE_DETECTED == "false", vars.PACKAGE_DETECTED)
+check("fires Package Left", pf["Package Left"] == true)
+
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_AUDIO", { audio_type = "car_alarm" })
+pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("fires Audio: Car Alarm", pf["Audio: Car Alarm"] == true)
+check("CAR_ALARM_LAST_HEARD populated", (vars.CAR_ALARM_LAST_HEARD or "") ~= "")
+check("car alarm history type is 'Audio: Car Alarm'",
+      history[1] and history[1].etype == "Audio: Car Alarm", history[1] and history[1].etype)
+
+-- Removed events must no longer be registered by the static set.
+check("Audio: Siren is no longer registered", registeredTypes["Audio: Siren"] == nil)
+check("Audio: Car Horn is no longer registered", registeredTypes["Audio: Car Horn"] == nil)
+check("Audio: Music is no longer registered", registeredTypes["Audio: Music"] == nil)
+
+-- NOTE for Task 6: registration of package/car-alarm types moves from the
+-- static list to the per-camera label list. These three "no longer
+-- registered" assertions stay valid; the assertions above deliberately check
+-- the recorded type string rather than its registration, so they survive
+-- that change. Do not convert them to registeredTypes lookups.
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)

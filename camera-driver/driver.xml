@@ -275,21 +275,6 @@
       <description>Glass breaking was detected by Frigate audio detection.</description>
     </event>
     <event>
-      <id>22</id>
-      <name>Audio: Siren</name>
-      <description>A siren was detected by Frigate audio detection.</description>
-    </event>
-    <event>
-      <id>23</id>
-      <name>Audio: Car Horn</name>
-      <description>A car horn was detected by Frigate audio detection.</description>
-    </event>
-    <event>
-      <id>24</id>
-      <name>Audio: Music</name>
-      <description>Music was detected by Frigate audio detection.</description>
-    </event>
-    <event>
       <id>25</id>
       <name>Audio Detected</name>
       <description>Any audio event was detected (generic catch-all).</description>
@@ -313,6 +298,21 @@
       <id>29</id>
       <name>Recording Disabled</name>
       <description>Recording was disabled on this camera.</description>
+    </event>
+    <event>
+      <id>30</id>
+      <name>Package Detected</name>
+      <description>A package was detected by Frigate object detection.</description>
+    </event>
+    <event>
+      <id>31</id>
+      <name>Package Left</name>
+      <description>A previously detected package is no longer present.</description>
+    </event>
+    <event>
+      <id>32</id>
+      <name>Audio: Car Alarm</name>
+      <description>A car alarm was detected by Frigate audio detection.</description>
     </event>
   </events>
 </devicedata>

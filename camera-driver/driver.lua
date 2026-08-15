@@ -116,9 +116,11 @@ local VAR = {
     YELL_LAST_HEARD           = "YELL_LAST_HEARD",
     FIRE_ALARM_LAST_HEARD     = "FIRE_ALARM_LAST_HEARD",
     GLASS_BREAKING_LAST_HEARD = "GLASS_BREAKING_LAST_HEARD",
-    SIREN_LAST_HEARD          = "SIREN_LAST_HEARD",
-    CAR_HORN_LAST_HEARD       = "CAR_HORN_LAST_HEARD",
-    MUSIC_LAST_HEARD          = "MUSIC_LAST_HEARD",
+    CAR_ALARM_LAST_HEARD      = "CAR_ALARM_LAST_HEARD",
+
+    -- Package (persistent, so boolean + last-seen like other objects)
+    PACKAGE_DETECTED  = "PACKAGE_DETECTED",
+    PACKAGE_LAST_SEEN = "PACKAGE_LAST_SEEN",
 }
 
 -- Last Frigate event seen for this camera, used to attach that event's
@@ -214,9 +216,11 @@ local function initVariables()
     C4:AddVariable(VAR.YELL_LAST_HEARD,           "", "STRING")
     C4:AddVariable(VAR.FIRE_ALARM_LAST_HEARD,     "", "STRING")
     C4:AddVariable(VAR.GLASS_BREAKING_LAST_HEARD, "", "STRING")
-    C4:AddVariable(VAR.SIREN_LAST_HEARD,          "", "STRING")
-    C4:AddVariable(VAR.CAR_HORN_LAST_HEARD,       "", "STRING")
-    C4:AddVariable(VAR.MUSIC_LAST_HEARD,          "", "STRING")
+    C4:AddVariable(VAR.CAR_ALARM_LAST_HEARD,      "", "STRING")
+
+    -- Package
+    C4:AddVariable(VAR.PACKAGE_DETECTED,  "false", "BOOL")
+    C4:AddVariable(VAR.PACKAGE_LAST_SEEN, "", "STRING")
 end
 
 --- Update a driver variable by name. Never let a bad variable name abort
@@ -332,14 +336,17 @@ local EVENT_IDS = {
     ["Audio: Yell"]          = 19,
     ["Audio: Fire Alarm"]    = 20,
     ["Audio: Glass Breaking"] = 21,
-    ["Audio: Siren"]         = 22,
-    ["Audio: Car Horn"]      = 23,
-    ["Audio: Music"]         = 24,
+    -- 22-24 vacant: Audio: Siren / Car Horn / Music removed (#28, #29) —
+    -- Frigate has never emitted these labels. Ids left unassigned rather
+    -- than reused so no existing event identity moves.
     ["Audio Detected"]       = 25,
     ["Detection Enabled"]    = 26,
     ["Detection Disabled"]   = 27,
     ["Recording Enabled"]    = 28,
     ["Recording Disabled"]   = 29,
+    ["Package Detected"]     = 30,
+    ["Package Left"]         = 31,
+    ["Audio: Car Alarm"]     = 32,
 }
 
 --- Fire a named event declared in driver.xml <events>.
@@ -410,6 +417,18 @@ local function handleDetection(tParams)
             fireEvent("Object Detected")
             recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
+            fireEvent("Object Left")
+            recordHistory(friendly .. " left", "Info", friendly .. " Left")
+        end
+    elseif objType == "package" then
+        setVar(VAR.PACKAGE_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.PACKAGE_LAST_SEEN, ts) end
+        if count > 0 and eventType == "new" then
+            fireEvent("Package Detected")
+            fireEvent("Object Detected")
+            recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
+        elseif count == 0 then
+            fireEvent("Package Left")
             fireEvent("Object Left")
             recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
@@ -667,6 +686,7 @@ local function registerNotificationEvents()
         "Dog Detected",    "Dog Left",
         "Cat Detected",    "Cat Left",
         "Object Detected", "Object Left",
+        "Package Detected", "Package Left",
         -- Motion / zones / loitering
         "Motion Detected", "Motion Stopped",
         "Zone Entered",    "Zone Exited",
@@ -675,8 +695,7 @@ local function registerNotificationEvents()
         "Camera Online",   "Camera Offline",
         -- Audio detection
         "Audio: Speech", "Audio: Bark", "Audio: Scream", "Audio: Yell",
-        "Audio: Fire Alarm", "Audio: Glass Breaking", "Audio: Siren",
-        "Audio: Car Horn", "Audio: Music",
+        "Audio: Fire Alarm", "Audio: Glass Breaking", "Audio: Car Alarm",
         -- State changes
         "Detection Enabled", "Detection Disabled",
         "Recording Enabled", "Recording Disabled",
