@@ -158,7 +158,7 @@ Event IDs 22–24 are left **vacant rather than reused**. Renumbering existing e
 
 Packages persist, so they get boolean state — enabling "a package is present and nobody has been detected for 10 minutes". Audio types are momentary and follow the existing timestamp-only pattern.
 
-Net counts are unchanged: 29 events (three added, three removed) and 29 variables. The README badge claims 27 variables and is already stale — correct it to 29 in the same change.
+Net counts are unchanged: **29 events** and **27 variables** (three added, three removed in each). Note: `grep -c "C4:AddVariable"` reports 29 because two comment lines mention the API name — count actual call sites with `grep -cE '^\s*C4:AddVariable\('`. The README badge correctly reads 27.
 
 ### 7. Fallback and failure handling
 
