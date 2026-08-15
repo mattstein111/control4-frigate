@@ -314,44 +314,59 @@ end
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------
 
--- Frigate audio-detection types. Anything outside this set on frigate/<cam>/audio/<type>
--- is telemetry (rms, dBFS, future additions) and must be ignored.
-AUDIO_DETECTION_TYPES = {
-    speech=true, bark=true, scream=true, yell=true, fire_alarm=true,
-    glass_breaking=true, siren=true, car_horn=true, music=true,
-}
+-- Audio telemetry that must never be subscribed to: Frigate publishes these
+-- ~1/second per camera and they would flood Last Event (issue #23).
+local AUDIO_TELEMETRY = { rms = true, dBFS = true, state = true }
+
+-- Fallback label sets, used when the Frigate config cannot be read. These
+-- reproduce the pre-config-driven behaviour exactly.
+local FALLBACK_OBJECT_LABELS = { "person", "car", "dog", "cat" }
+local FALLBACK_AUDIO_LABELS  = { "speech", "bark", "scream", "yell", "fire_alarm" }
+
+RESOLVED_OBJECT_LABELS = FALLBACK_OBJECT_LABELS
+RESOLVED_AUDIO_LABELS  = FALLBACK_AUDIO_LABELS
+
+-- Derived from RESOLVED_AUDIO_LABELS by setResolvedLabels(); never edited
+-- directly, so it cannot drift from the subscription list.
+AUDIO_DETECTION_TYPES = {}
+
+--- Assign the resolved label sets and rebuild the derived whitelist.
+function setResolvedLabels(objectLabels, audioLabels)
+    if objectLabels and #objectLabels > 0 then RESOLVED_OBJECT_LABELS = objectLabels end
+    if audioLabels  and #audioLabels  > 0 then RESOLVED_AUDIO_LABELS  = audioLabels  end
+    AUDIO_DETECTION_TYPES = {}
+    for _, l in ipairs(RESOLVED_AUDIO_LABELS) do
+        if not AUDIO_TELEMETRY[l] then AUDIO_DETECTION_TYPES[l] = true end
+    end
+end
+setResolvedLabels(FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS)
+
+--- Build the full MQTT topic list for the given resolved labels.
+function buildSubscriptionTopics(objectLabels, audioLabels)
+    local topics = {
+        "frigate/available",
+        "frigate/events",
+        "frigate/+/motion",
+        "frigate/+/detect/state",
+        "frigate/+/recordings/state",
+    }
+    for _, l in ipairs(objectLabels or {}) do
+        topics[#topics + 1] = "frigate/+/" .. l          -- object counts
+        topics[#topics + 1] = "frigate/+/+/" .. l        -- zone counts
+    end
+    for _, l in ipairs(audioLabels or {}) do
+        if not AUDIO_TELEMETRY[l] then
+            topics[#topics + 1] = "frigate/+/audio/" .. l
+        end
+    end
+    return topics
+end
 
 --- Subscribe to all Frigate MQTT topics.
 local function subscribeFrigateTopics()
     if not mqttClient then return end
 
-    local topics = {
-        "frigate/available",
-        "frigate/events",
-        -- Per-camera object counts
-        "frigate/+/person",
-        "frigate/+/car",
-        "frigate/+/dog",
-        "frigate/+/cat",
-        "frigate/+/motion",
-        -- Zone events: frigate/<camera>/<zone>/<object>
-        "frigate/+/+/person",
-        "frigate/+/+/car",
-        "frigate/+/+/dog",
-        "frigate/+/+/cat",
-        -- Audio detection events (whitelist — excludes rms/dBFS telemetry that would flood Last Event)
-        "frigate/+/audio/speech",
-        "frigate/+/audio/bark",
-        "frigate/+/audio/scream",
-        "frigate/+/audio/yell",
-        "frigate/+/audio/fire_alarm",
-        "frigate/+/audio/glass_breaking",
-        "frigate/+/audio/siren",
-        "frigate/+/audio/car_horn",
-        "frigate/+/audio/music",
-        "frigate/+/detect/state",
-        "frigate/+/recordings/state",
-    }
+    local topics = buildSubscriptionTopics(RESOLVED_OBJECT_LABELS, RESOLVED_AUDIO_LABELS)
 
     for _, topic in ipairs(topics) do
         mqttClient:Subscribe(topic, 1)
@@ -359,6 +374,8 @@ local function subscribeFrigateTopics()
     end
 
     log(LOG_INFO, "Subscribed to all Frigate MQTT topics")
+    log(LOG_INFO, "Subscribed to objects: " .. table.concat(RESOLVED_OBJECT_LABELS, ", ")
+        .. " | audio: " .. table.concat(RESOLVED_AUDIO_LABELS, ", "))
 end
 
 --- Parse MQTT topic into segments.
@@ -487,7 +504,11 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     -- frigate/<camera>/<object>
     if #segments == 3 then
         local objType = segments[3]
-        if objType == "person" or objType == "car" or objType == "dog" or objType == "cat" then
+        local tracked = false
+        for _, l in ipairs(RESOLVED_OBJECT_LABELS) do
+            if l == objType then tracked = true break end
+        end
+        if tracked then
             local count = tonumber(payload) or 0
             local key = camName .. "/" .. objType
             local prevCount = prevCounts[key] or 0
@@ -514,7 +535,11 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     if #segments == 4 then
         local zone = segments[3]
         local objType = segments[4]
-        if objType == "person" or objType == "car" or objType == "dog" or objType == "cat" then
+        local tracked = false
+        for _, l in ipairs(RESOLVED_OBJECT_LABELS) do
+            if l == objType then tracked = true break end
+        end
+        if tracked then
             local count = tonumber(payload) or 0
             local zoneKey = camName .. "/" .. zone .. "/" .. objType
             local prevCount = prevCounts[zoneKey] or 0
@@ -639,6 +664,14 @@ local function fetchCameras(callback)
             setStatus("API Error: " .. ((strError and strError ~= "") and strError or ("HTTP " .. tostring(responseCode))))
             if callback then callback(false, {}) end
             return
+        end
+
+        local objU, audU = parseDetectionLabels(strData)
+        if objU then
+            setResolvedLabels(objU, audU)
+        else
+            log(LOG_WARNING, "Could not read detection labels from Frigate config — "
+                .. "falling back to the built-in label list; some detections may not reach Control4")
         end
 
         local cameraNames = {}
@@ -1430,4 +1463,9 @@ function OnDriverDestroyed()
         C4:KillTimer(UPDATE_CHECK_TIMER)
         UPDATE_CHECK_TIMER = nil
     end
+end
+
+--- Test accessor: route a raw MQTT message the way the broker callback does.
+function handleMQTTForTest(topic, payload)
+    return onMQTTMessage(nil, 0, topic, payload, 1, false)
 end

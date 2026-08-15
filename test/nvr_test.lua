@@ -191,5 +191,46 @@ check("malformed payload does not raise", ok3)
 check("malformed payload returns nil", select(1, parseDetectionLabels("not json")) == nil)
 check("empty payload returns nil", select(1, parseDetectionLabels("")) == nil)
 
+------------------------------------------------------------------------
+-- Subscriptions derived from resolved labels (#28, #29)
+------------------------------------------------------------------------
+local function has(list, v)
+    for _, x in ipairs(list) do if x == v then return true end end
+    return false
+end
+
+local topics = buildSubscriptionTopics({"person","package"}, {"bark","glass"})
+check("subscribes to object counts", has(topics, "frigate/+/person") and has(topics, "frigate/+/package"))
+check("subscribes to zone counts", has(topics, "frigate/+/+/person") and has(topics, "frigate/+/+/package"))
+check("subscribes to audio labels", has(topics, "frigate/+/audio/bark") and has(topics, "frigate/+/audio/glass"))
+check("still subscribes to frigate/events", has(topics, "frigate/events"))
+check("still subscribes to motion", has(topics, "frigate/+/motion"))
+
+-- The #23 protection: telemetry must never be subscribed to, whatever the config says.
+check("never subscribes to audio rms", not has(topics, "frigate/+/audio/rms"))
+check("never subscribes to audio dBFS", not has(topics, "frigate/+/audio/dBFS"))
+local dirty = buildSubscriptionTopics({"person"}, {"bark","rms","dBFS"})
+check("telemetry labels are filtered out of audio subscriptions",
+      not has(dirty, "frigate/+/audio/rms") and not has(dirty, "frigate/+/audio/dBFS"))
+check("no bare wildcard subscription", not has(topics, "frigate/+/+") and not has(topics, "frigate/#"))
+
+-- Whitelist and subscriptions come from one source and cannot disagree.
+setResolvedLabels({"person","package"}, {"bark","glass"})
+check("whitelist matches resolved audio labels",
+      AUDIO_DETECTION_TYPES.bark == true and AUDIO_DETECTION_TYPES.glass == true)
+check("whitelist excludes unresolved audio labels", AUDIO_DETECTION_TYPES.speech == nil)
+check("whitelist never contains telemetry",
+      AUDIO_DETECTION_TYPES.rms == nil and AUDIO_DETECTION_TYPES.dBFS == nil)
+
+-- An object label outside the old four must now be forwarded.
+-- Uses "bbq", the only camera registered in the C4:PersistGetValue mock above;
+-- an unmanaged camera name would be dropped by sendToCamera regardless of label.
+sent = {}
+handleMQTTForTest("frigate/bbq/package", "1")
+local pk = findSent("FRIGATE_DETECTION")
+check("package count message is forwarded", pk ~= nil)
+check("forwarded with the right object type", pk and pk.params.object_type == "package",
+      pk and pk.params.object_type)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
