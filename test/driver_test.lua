@@ -351,13 +351,36 @@ check("still registers static types",
 check("registration category is unchanged", registeredCategory == "Cameras", registeredCategory)
 check("registration subcategory is unchanged", registeredSubcategory == "Frigate", registeredSubcategory)
 
--- Empty label lists must not wipe the static registration.
+-- Empty label lists must not wipe the static registration, and — per
+-- final-fix Finding B — must register the FULL canonical set rather than
+-- nothing. "Empty" here means "unknown" (Frigate unreachable at NVR
+-- startup, or this camera missing from Frigate's config), not "this camera
+-- detects nothing"; a camera in that state still receives detections
+-- through the NVR's wildcard MQTT subscriptions, so under-registering means
+-- history gets recorded but never rendered in the Control4 app.
 registeredTypes = {}
 pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
     host = "192.168.1.50", camera_name = "bbq", use_sub_stream = "Yes",
     object_labels = "", audio_labels = "",
 })
 check("empty labels still register the static set", registeredTypes["Motion Detected"] == true)
+check("empty labels register the full canonical object set",
+      registeredTypes["Person Detected"] == true and registeredTypes["Package Detected"] == true)
+check("empty labels register the full canonical audio set",
+      registeredTypes["Audio: Glass Breaking"] == true)
+
+-- The truly-absent case (neither object_labels nor audio_labels present in
+-- tParams at all, not even as empty strings) must behave identically — a
+-- prior reviewer flagged this exact case as untested.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "bbq", use_sub_stream = "Yes",
+})
+check("absent label keys still register the static set", registeredTypes["Motion Detected"] == true)
+check("absent label keys register the full canonical object set",
+      registeredTypes["Person Detected"] == true and registeredTypes["Package Detected"] == true)
+check("absent label keys register the full canonical audio set",
+      registeredTypes["Audio: Glass Breaking"] == true)
 
 -- An unmapped label registers its generated type, so its history can render.
 registeredTypes = {}

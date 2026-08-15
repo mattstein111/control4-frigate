@@ -259,6 +259,55 @@ check("fallback audio never contains telemetry",
       not has(fbAud, "rms") and not has(fbAud, "dBFS"))
 
 ------------------------------------------------------------------------
+-- Re-subscription when resolved labels change (final-fix Finding A)
+--
+-- setResolvedLabels() must push the updated set to the broker when MQTT is
+-- already connected — otherwise the subscription list (fixed at connect
+-- time) can permanently disagree with the whitelist it also derives, and a
+-- label added via Discover Cameras never reaches Control4 until an
+-- unrelated MQTT reconnect happens to occur.
+------------------------------------------------------------------------
+local mqttSubscribeCalls = {}
+local mqttOnConnectCb = nil
+function C4:MQTT(clientId)
+    local client = {}
+    function client:SetUsernameAndPassword(u, p) end
+    function client:OnConnect(cb) mqttOnConnectCb = cb end
+    function client:OnDisconnect(cb) end
+    function client:OnMessage(cb) end
+    function client:Connect(host, port, keepalive) end
+    function client:Disconnect() end
+    function client:Subscribe(topic, qos) mqttSubscribeCalls[#mqttSubscribeCalls + 1] = topic end
+    function client:ReasonCodeToString(code) return tostring(code) end
+    return client
+end
+
+Properties["MQTT Broker"] = "192.168.1.60"
+
+-- Known baseline before connecting, independent of whatever earlier tests
+-- above left RESOLVED_OBJECT_LABELS/RESOLVED_AUDIO_LABELS set to.
+setResolvedLabels({"person", "car"}, {"bark"})
+
+ExecuteCommand("ReconnectMQTT", {})
+check("MQTT client created on ReconnectMQTT", mqttOnConnectCb ~= nil)
+
+mqttOnConnectCb(nil, 0, nil, nil)  -- simulate broker CONNACK (reasonCode 0)
+check("initial connect subscribes using the resolved set", #mqttSubscribeCalls > 0, #mqttSubscribeCalls)
+
+mqttSubscribeCalls = {}
+setResolvedLabels({"person", "car"}, {"bark"})
+check("resolving an identical label set does not re-subscribe",
+      #mqttSubscribeCalls == 0, #mqttSubscribeCalls)
+
+mqttSubscribeCalls = {}
+setResolvedLabels({"person", "car", "bicycle"}, {"bark"})
+check("resolving a changed label set re-subscribes", #mqttSubscribeCalls > 0, #mqttSubscribeCalls)
+check("re-subscription includes the new label's object-count topic",
+      has(mqttSubscribeCalls, "frigate/+/bicycle"))
+check("re-subscription includes the new label's zone-count topic",
+      has(mqttSubscribeCalls, "frigate/+/+/bicycle"))
+
+------------------------------------------------------------------------
 -- Per-camera label forwarding (#28, #29)
 ------------------------------------------------------------------------
 RESOLVED_PER_CAMERA = {

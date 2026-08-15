@@ -342,13 +342,42 @@ RESOLVED_AUDIO_LABELS  = FALLBACK_AUDIO_LABELS
 -- directly, so it cannot drift from the subscription list.
 AUDIO_DETECTION_TYPES = {}
 
+-- Forward declaration — subscribeFrigateTopics is defined later in this
+-- file (it needs mqttClient, which is declared even earlier), but
+-- setResolvedLabels below must call it to re-subscribe when the resolved
+-- label set changes after MQTT is already connected. Without this, a
+-- Discover Cameras that picks up a new label never reaches the broker
+-- subscription list until an unrelated MQTT reconnect (final-fix Finding A).
+local subscribeFrigateTopics
+
+--- Join a label list into a sorted, comma-joined string for cheap
+--- before/after comparison — good enough to detect "did the resolved set
+--- actually change" without needing a deep table diff.
+local function sortedJoin(list)
+    local copy = {}
+    for i, v in ipairs(list) do copy[i] = v end
+    table.sort(copy)
+    return table.concat(copy, ",")
+end
+
 --- Assign the resolved label sets and rebuild the derived whitelist.
+--- Re-subscribes to MQTT when the resolved set actually changed and a
+--- connected client exists, so the broker subscription list can never drift
+--- from the whitelist this function also maintains (final-fix Finding A).
 function setResolvedLabels(objectLabels, audioLabels)
+    local prevObj, prevAud = RESOLVED_OBJECT_LABELS, RESOLVED_AUDIO_LABELS
     if objectLabels and #objectLabels > 0 then RESOLVED_OBJECT_LABELS = objectLabels end
     if audioLabels  and #audioLabels  > 0 then RESOLVED_AUDIO_LABELS  = audioLabels  end
     AUDIO_DETECTION_TYPES = {}
     for _, l in ipairs(RESOLVED_AUDIO_LABELS) do
         if not AUDIO_TELEMETRY[l] then AUDIO_DETECTION_TYPES[l] = true end
+    end
+
+    local changed = sortedJoin(RESOLVED_OBJECT_LABELS) ~= sortedJoin(prevObj)
+        or sortedJoin(RESOLVED_AUDIO_LABELS) ~= sortedJoin(prevAud)
+
+    if changed and mqttClient and mqttConnected then
+        subscribeFrigateTopics()
     end
 end
 setResolvedLabels(FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS)
@@ -378,7 +407,7 @@ function buildSubscriptionTopics(objectLabels, audioLabels)
 end
 
 --- Subscribe to all Frigate MQTT topics.
-local function subscribeFrigateTopics()
+function subscribeFrigateTopics()
     if not mqttClient then return end
 
     local topics = buildSubscriptionTopics(RESOLVED_OBJECT_LABELS, RESOLVED_AUDIO_LABELS)

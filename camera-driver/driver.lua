@@ -699,15 +699,35 @@ local function registerNotificationEvents(objectLabels, audioLabels)
     addType("Detection Enabled")  addType("Detection Disabled")
     addType("Recording Enabled")  addType("Recording Disabled")
 
-    -- This camera's own labels.
-    for _, l in ipairs(objectLabels or {}) do
-        local info = labelInfo(l, "object")
-        addType(info.detected)
-        addType(info.left)
+    -- This camera's own labels. An empty or absent list means "unknown" —
+    -- Frigate was unreachable, or this camera isn't in Frigate's config yet —
+    -- not "this camera detects nothing". Register the full canonical set in
+    -- that case, mirroring the NVR side's "widest safe set on failure"
+    -- fallback; a camera in this state still receives detections through the
+    -- NVR's wildcard MQTT subscriptions, and under-registering means those
+    -- get recorded but never rendered in the Control4 app (final-fix Finding
+    -- B). When real labels are supplied, keep the precise per-camera set.
+    if objectLabels and #objectLabels > 0 then
+        for _, l in ipairs(objectLabels) do
+            local info = labelInfo(l, "object")
+            addType(info.detected)
+            addType(info.left)
+        end
+    else
+        for _, info in pairs(OBJECT_LABELS) do
+            addType(info.detected)
+            addType(info.left)
+        end
     end
-    for _, l in ipairs(audioLabels or {}) do
-        local info = labelInfo(l, "audio")
-        addType("Audio: " .. info.friendly)
+    if audioLabels and #audioLabels > 0 then
+        for _, l in ipairs(audioLabels) do
+            local info = labelInfo(l, "audio")
+            addType("Audio: " .. info.friendly)
+        end
+    else
+        for _, info in pairs(AUDIO_LABELS) do
+            addType("Audio: " .. info.friendly)
+        end
     end
 
     local typeList = ""
