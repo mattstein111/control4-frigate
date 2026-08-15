@@ -80,6 +80,16 @@ function check(desc, ok, detail)
     if not ok then failures = failures + 1 end
 end
 
+-- In production the NVR driver pushes SET_FRIGATE_CONFIG (and this camera's
+-- labels) as soon as it pairs — before Frigate can emit any detection event
+-- for it. Registration is now per-camera (#28, #29), so simulate that same
+-- ordering here; otherwise the checks below would be asserting registration
+-- of types this camera was never told it has.
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = Properties["Frigate Host"], camera_name = Properties["Camera Name"], use_sub_stream = "Yes",
+    object_labels = "person", audio_labels = "fire_alarm",
+})
+
 ------------------------------------------------------------------------
 -- Person detected: variables, events, history, Last Event
 ------------------------------------------------------------------------
@@ -232,6 +242,153 @@ local savedHost = Properties["Frigate Host"]
 Properties["Frigate Host"] = ""
 check("unset host returns empty string", GetNotificationAttachmentURL(1001, {}) == "")
 Properties["Frigate Host"] = savedHost
+
+------------------------------------------------------------------------
+-- Canonical label mapping and the generic path (#28, #29)
+------------------------------------------------------------------------
+check("friendlyLabel title-cases every word", friendlyLabel("fire_hydrant") == "Fire Hydrant",
+      friendlyLabel("fire_hydrant"))
+check("friendlyLabel handles a single word", friendlyLabel("bicycle") == "Bicycle")
+
+local gi = labelInfo("glass", "audio")
+check("glass maps to Audio: Glass Breaking", gi.event == "Audio: Glass Breaking", gi.event)
+check("glass uses the glass-breaking variable", gi.var == "GLASS_BREAKING_LAST_HEARD", gi.var)
+local sh = labelInfo("shatter", "audio")
+check("shatter shares the glass event", sh.event == "Audio: Glass Breaking", sh.event)
+check("shatter shares the glass variable", sh.var == "GLASS_BREAKING_LAST_HEARD", sh.var)
+local ca = labelInfo("car_alarm", "audio")
+check("car_alarm is its own event", ca.event == "Audio: Car Alarm", ca.event)
+check("car_alarm has its own variable", ca.var == "CAR_ALARM_LAST_HEARD", ca.var)
+
+check("removed label siren is no longer mapped", labelInfo("siren", "audio").event == "Audio Detected",
+      labelInfo("siren", "audio").event)
+local unk = labelInfo("didgeridoo", "audio")
+check("unmapped audio falls back to the generic event", unk.event == "Audio Detected", unk.event)
+check("unmapped audio has a friendly name", unk.friendly == "Didgeridoo", unk.friendly)
+check("unmapped audio has no variable", unk.var == nil)
+
+local bike = labelInfo("bicycle", "object")
+check("unmapped object gets a generated detected name", bike.detected == "Bicycle Detected", bike.detected)
+check("unmapped object gets a generated left name", bike.left == "Bicycle Left", bike.left)
+check("unmapped object has no variables", bike.var_bool == nil and bike.var_seen == nil)
+
+-- Title-case regression: fire_alarm history must match its registration exactly.
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_AUDIO", { audio_type = "fire_alarm" })
+local fh = history[1]
+check("fire_alarm history type is title-cased", fh and fh.etype == "Audio: Fire Alarm", fh and fh.etype)
+check("fire_alarm history type is registered", fh and registeredTypes[fh.etype] == true, fh and fh.etype)
+
+-- An unmapped object must reach the generic branch that was previously dead code.
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_DETECTION",
+      { object_type = "bicycle", count = 1, event_type = "new" })
+local fired = {}
+for _, e in ipairs(events) do fired[e] = true end
+check("unmapped object fires the generic event", fired["Object Detected"] == true)
+check("unmapped object records a named history entry",
+      history[1] and history[1].etype == "Bicycle Detected", history[1] and history[1].etype)
+
+------------------------------------------------------------------------
+-- Package and car alarm (#28, #29)
+------------------------------------------------------------------------
+events, history = {}, {}
+local okp = pcall(ExecuteCommand, "FRIGATE_DETECTION",
+    { object_type = "package", count = 1, event_type = "new" })
+check("package detection does not raise", okp)
+check("PACKAGE_DETECTED set true", vars.PACKAGE_DETECTED == "true", vars.PACKAGE_DETECTED)
+check("PACKAGE_LAST_SEEN populated", (vars.PACKAGE_LAST_SEEN or "") ~= "")
+local pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("fires Package Detected", pf["Package Detected"] == true)
+check("also fires Object Detected", pf["Object Detected"] == true)
+check("package history type is 'Package Detected'",
+      history[1] and history[1].etype == "Package Detected", history[1] and history[1].etype)
+
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_DETECTION", { object_type = "package", count = 0, event_type = "end" })
+pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("PACKAGE_DETECTED set false", vars.PACKAGE_DETECTED == "false", vars.PACKAGE_DETECTED)
+check("fires Package Left", pf["Package Left"] == true)
+
+events, history = {}, {}
+pcall(ExecuteCommand, "FRIGATE_AUDIO", { audio_type = "car_alarm" })
+pf = {}
+for _, e in ipairs(events) do pf[e] = true end
+check("fires Audio: Car Alarm", pf["Audio: Car Alarm"] == true)
+check("CAR_ALARM_LAST_HEARD populated", (vars.CAR_ALARM_LAST_HEARD or "") ~= "")
+check("car alarm history type is 'Audio: Car Alarm'",
+      history[1] and history[1].etype == "Audio: Car Alarm", history[1] and history[1].etype)
+
+-- Removed events must no longer be registered by the static set.
+check("Audio: Siren is no longer registered", registeredTypes["Audio: Siren"] == nil)
+check("Audio: Car Horn is no longer registered", registeredTypes["Audio: Car Horn"] == nil)
+check("Audio: Music is no longer registered", registeredTypes["Audio: Music"] == nil)
+
+-- NOTE for Task 6: registration of package/car-alarm types moves from the
+-- static list to the per-camera label list. These three "no longer
+-- registered" assertions stay valid; the assertions above deliberately check
+-- the recorded type string rather than its registration, so they survive
+-- that change. Do not convert them to registeredTypes lookups.
+
+------------------------------------------------------------------------
+-- Per-camera history registration (#28, #29)
+------------------------------------------------------------------------
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "front_door", use_sub_stream = "Yes",
+    object_labels = "package,person", audio_labels = "bark,glass",
+})
+
+check("registers the camera's object labels",
+      registeredTypes["Package Detected"] == true and registeredTypes["Person Detected"] == true)
+check("registers the camera's audio labels",
+      registeredTypes["Audio: Bark"] == true and registeredTypes["Audio: Glass Breaking"] == true)
+check("does not register labels this camera lacks", registeredTypes["Car Detected"] == nil)
+check("still registers static types",
+      registeredTypes["Motion Detected"] == true and registeredTypes["Camera Offline"] == true)
+check("registration category is unchanged", registeredCategory == "Cameras", registeredCategory)
+check("registration subcategory is unchanged", registeredSubcategory == "Frigate", registeredSubcategory)
+
+-- Empty label lists must not wipe the static registration, and — per
+-- final-fix Finding B — must register the FULL canonical set rather than
+-- nothing. "Empty" here means "unknown" (Frigate unreachable at NVR
+-- startup, or this camera missing from Frigate's config), not "this camera
+-- detects nothing"; a camera in that state still receives detections
+-- through the NVR's wildcard MQTT subscriptions, so under-registering means
+-- history gets recorded but never rendered in the Control4 app.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "bbq", use_sub_stream = "Yes",
+    object_labels = "", audio_labels = "",
+})
+check("empty labels still register the static set", registeredTypes["Motion Detected"] == true)
+check("empty labels register the full canonical object set",
+      registeredTypes["Person Detected"] == true and registeredTypes["Package Detected"] == true)
+check("empty labels register the full canonical audio set",
+      registeredTypes["Audio: Glass Breaking"] == true)
+
+-- The truly-absent case (neither object_labels nor audio_labels present in
+-- tParams at all, not even as empty strings) must behave identically — a
+-- prior reviewer flagged this exact case as untested.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "bbq", use_sub_stream = "Yes",
+})
+check("absent label keys still register the static set", registeredTypes["Motion Detected"] == true)
+check("absent label keys register the full canonical object set",
+      registeredTypes["Person Detected"] == true and registeredTypes["Package Detected"] == true)
+check("absent label keys register the full canonical audio set",
+      registeredTypes["Audio: Glass Breaking"] == true)
+
+-- An unmapped label registers its generated type, so its history can render.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "yard", use_sub_stream = "Yes",
+    object_labels = "bicycle", audio_labels = "",
+})
+check("unmapped label's generated type is registered", registeredTypes["Bicycle Detected"] == true)
 
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)

@@ -151,5 +151,189 @@ check("loitering still detected", loiter ~= nil)
 check("loitering zone forwarded", loiter and loiter.params.zone == "driveway",
       loiter and loiter.params.zone)
 
+------------------------------------------------------------------------
+-- Label parsing from Frigate config (#28, #29)
+------------------------------------------------------------------------
+local CFG = [[
+{"objects":{"track":["person"]},
+ "audio":{"enabled":true,"listen":["bark","speech"]},
+ "cameras":{
+   "bbq":{"objects":{"track":["person"]},"audio":{"enabled":true,"listen":["bark","speech"]}},
+   "front_door":{"objects":{"track":["person","package"]},"audio":{"enabled":true,"listen":["bark","speech","glass"]}},
+   "gate":{"objects":{"track":["person","car"]},"audio":{"enabled":true,"listen":["bark","speech"]}}}}
+]]
+
+local function joined(t) return table.concat(t, ",") end
+
+local objU, audU, perCam = parseDetectionLabels(CFG)
+check("parseDetectionLabels returns a result", objU ~= nil)
+check("object union spans all cameras", joined(objU) == "car,package,person", objU and joined(objU))
+check("audio union spans all cameras", joined(audU) == "bark,glass,speech", audU and joined(audU))
+check("per-camera objects for front_door",
+      perCam and joined(perCam.front_door.objects) == "package,person",
+      perCam and perCam.front_door and joined(perCam.front_door.objects))
+check("per-camera audio for bbq excludes glass",
+      perCam and joined(perCam.bbq.audio) == "bark,speech",
+      perCam and perCam.bbq and joined(perCam.bbq.audio))
+
+-- A camera with no audio block still contributes its objects.
+local CFG2 = [[
+{"objects":{"track":["person"]},"audio":{"listen":["bark"]},
+ "cameras":{"cam1":{"objects":{"track":["person","dog"]}}}}
+]]
+local o2, a2, p2 = parseDetectionLabels(CFG2)
+check("camera without audio block still parses", o2 ~= nil)
+check("its objects are included", o2 and joined(o2) == "dog,person", o2 and joined(o2))
+
+-- Malformed and empty payloads return nil rather than raising.
+local ok3 = pcall(parseDetectionLabels, "not json")
+check("malformed payload does not raise", ok3)
+check("malformed payload returns nil", select(1, parseDetectionLabels("not json")) == nil)
+check("empty payload returns nil", select(1, parseDetectionLabels("")) == nil)
+
+------------------------------------------------------------------------
+-- Subscriptions derived from resolved labels (#28, #29)
+------------------------------------------------------------------------
+local function has(list, v)
+    for _, x in ipairs(list) do if x == v then return true end end
+    return false
+end
+
+local topics = buildSubscriptionTopics({"person","package"}, {"bark","glass"})
+check("subscribes to object counts", has(topics, "frigate/+/person") and has(topics, "frigate/+/package"))
+check("subscribes to zone counts", has(topics, "frigate/+/+/person") and has(topics, "frigate/+/+/package"))
+check("subscribes to audio labels", has(topics, "frigate/+/audio/bark") and has(topics, "frigate/+/audio/glass"))
+check("still subscribes to frigate/events", has(topics, "frigate/events"))
+check("still subscribes to motion", has(topics, "frigate/+/motion"))
+
+-- The #23 protection: telemetry must never be subscribed to, whatever the config says.
+check("never subscribes to audio rms", not has(topics, "frigate/+/audio/rms"))
+check("never subscribes to audio dBFS", not has(topics, "frigate/+/audio/dBFS"))
+local dirty = buildSubscriptionTopics({"person"}, {"bark","rms","dBFS"})
+check("telemetry labels are filtered out of audio subscriptions",
+      not has(dirty, "frigate/+/audio/rms") and not has(dirty, "frigate/+/audio/dBFS"))
+check("no bare wildcard subscription", not has(topics, "frigate/+/+") and not has(topics, "frigate/#"))
+
+-- Whitelist and subscriptions come from one source and cannot disagree.
+setResolvedLabels({"person","package"}, {"bark","glass"})
+check("whitelist matches resolved audio labels",
+      AUDIO_DETECTION_TYPES.bark == true and AUDIO_DETECTION_TYPES.glass == true)
+check("whitelist excludes unresolved audio labels", AUDIO_DETECTION_TYPES.speech == nil)
+check("whitelist never contains telemetry",
+      AUDIO_DETECTION_TYPES.rms == nil and AUDIO_DETECTION_TYPES.dBFS == nil)
+
+-- An object label outside the old four must now be forwarded.
+-- Uses "bbq", the only camera registered in the C4:PersistGetValue mock above;
+-- an unmanaged camera name would be dropped by sendToCamera regardless of label.
+sent = {}
+handleMQTTForTest("frigate/bbq/package", "1")
+local pk = findSent("FRIGATE_DETECTION")
+check("package count message is forwarded", pk ~= nil)
+check("forwarded with the right object type", pk and pk.params.object_type == "package",
+      pk and pk.params.object_type)
+
+-- The zone branch (frigate/<camera>/<zone>/<object>) has the same
+-- resolved-set filter as the object branch above but was previously
+-- untested end to end — a mutation there would pass silently otherwise.
+sent = {}
+handleMQTTForTest("frigate/bbq/driveway/package", "1")
+local zn = findSent("FRIGATE_ZONE")
+check("zone count message is forwarded", zn ~= nil)
+check("forwarded with the right zone", zn and zn.params.zone == "driveway", zn and zn.params.zone)
+check("forwarded with the right object type", zn and zn.params.object_type == "package",
+      zn and zn.params.object_type)
+
+-- The fallback label sets are what the driver uses when Frigate's config
+-- cannot be read — pin their contents so a future edit can't silently
+-- narrow them back (that exact regression, dropping "package", is #29).
+local fbObj, fbAud = getFallbackLabels()
+check("fallback objects include package", has(fbObj, "package"))
+check("fallback objects include the original four",
+      has(fbObj, "person") and has(fbObj, "car") and has(fbObj, "dog") and has(fbObj, "cat"))
+check("fallback audio includes glass, shatter, car_alarm",
+      has(fbAud, "glass") and has(fbAud, "shatter") and has(fbAud, "car_alarm"))
+check("fallback audio includes the original five",
+      has(fbAud, "speech") and has(fbAud, "bark") and has(fbAud, "scream")
+      and has(fbAud, "yell") and has(fbAud, "fire_alarm"))
+check("fallback audio never contains telemetry",
+      not has(fbAud, "rms") and not has(fbAud, "dBFS"))
+
+------------------------------------------------------------------------
+-- Re-subscription when resolved labels change (final-fix Finding A)
+--
+-- setResolvedLabels() must push the updated set to the broker when MQTT is
+-- already connected — otherwise the subscription list (fixed at connect
+-- time) can permanently disagree with the whitelist it also derives, and a
+-- label added via Discover Cameras never reaches Control4 until an
+-- unrelated MQTT reconnect happens to occur.
+------------------------------------------------------------------------
+local mqttSubscribeCalls = {}
+local mqttOnConnectCb = nil
+function C4:MQTT(clientId)
+    local client = {}
+    function client:SetUsernameAndPassword(u, p) end
+    function client:OnConnect(cb) mqttOnConnectCb = cb end
+    function client:OnDisconnect(cb) end
+    function client:OnMessage(cb) end
+    function client:Connect(host, port, keepalive) end
+    function client:Disconnect() end
+    function client:Subscribe(topic, qos) mqttSubscribeCalls[#mqttSubscribeCalls + 1] = topic end
+    function client:ReasonCodeToString(code) return tostring(code) end
+    return client
+end
+
+Properties["MQTT Broker"] = "192.168.1.60"
+
+-- Known baseline before connecting, independent of whatever earlier tests
+-- above left RESOLVED_OBJECT_LABELS/RESOLVED_AUDIO_LABELS set to.
+setResolvedLabels({"person", "car"}, {"bark"})
+
+ExecuteCommand("ReconnectMQTT", {})
+check("MQTT client created on ReconnectMQTT", mqttOnConnectCb ~= nil)
+
+mqttOnConnectCb(nil, 0, nil, nil)  -- simulate broker CONNACK (reasonCode 0)
+check("initial connect subscribes using the resolved set", #mqttSubscribeCalls > 0, #mqttSubscribeCalls)
+
+mqttSubscribeCalls = {}
+setResolvedLabels({"person", "car"}, {"bark"})
+check("resolving an identical label set does not re-subscribe",
+      #mqttSubscribeCalls == 0, #mqttSubscribeCalls)
+
+mqttSubscribeCalls = {}
+setResolvedLabels({"person", "car", "bicycle"}, {"bark"})
+check("resolving a changed label set re-subscribes", #mqttSubscribeCalls > 0, #mqttSubscribeCalls)
+check("re-subscription includes the new label's object-count topic",
+      has(mqttSubscribeCalls, "frigate/+/bicycle"))
+check("re-subscription includes the new label's zone-count topic",
+      has(mqttSubscribeCalls, "frigate/+/+/bicycle"))
+
+------------------------------------------------------------------------
+-- Per-camera label forwarding (#28, #29)
+------------------------------------------------------------------------
+RESOLVED_PER_CAMERA = {
+    bbq        = { objects = {"person"},          audio = {"bark","speech"} },
+    front_door = { objects = {"package","person"}, audio = {"bark","glass","speech"} },
+}
+
+sent = {}
+sendCameraConfigForTest("front_door", 1586)
+local cfg = findSent("SET_FRIGATE_CONFIG")
+check("sends SET_FRIGATE_CONFIG", cfg ~= nil)
+check("object_labels is a comma-separated string",
+      cfg and cfg.params.object_labels == "package,person", cfg and cfg.params.object_labels)
+check("audio_labels is a comma-separated string",
+      cfg and cfg.params.audio_labels == "bark,glass,speech", cfg and cfg.params.audio_labels)
+check("existing params still present",
+      cfg and cfg.params.camera_name == "front_door" and cfg.params.host ~= nil)
+
+-- A camera absent from the resolved map must still get a usable config.
+sent = {}
+sendCameraConfigForTest("unknown_cam", 1600)
+local cfg2 = findSent("SET_FRIGATE_CONFIG")
+check("unknown camera still receives config", cfg2 ~= nil)
+check("unknown camera gets empty label lists",
+      cfg2 and cfg2.params.object_labels == "" and cfg2.params.audio_labels == "",
+      cfg2 and cfg2.params.object_labels)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)

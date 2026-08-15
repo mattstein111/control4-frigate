@@ -263,48 +263,154 @@ local function jsonAfterObject(json)
     return json:match('"after"%s*:%s*(%b{})')
 end
 
+--- Extract a JSON string array like "listen":["a","b"] into a Lua array.
+local function jsonStringArray(json, key)
+    local body = json:match('"' .. key .. '"%s*:%s*%[([^%]]*)%]')
+    if not body then return nil end
+    local out = {}
+    for v in body:gmatch('"([^"]+)"') do out[#out + 1] = v end
+    return out
+end
+
+--- Parse the detection labels Frigate is configured to produce.
+--- Returns objectUnion, audioUnion, perCamera — unions are sorted arrays;
+--- perCamera maps camera name to { objects = {...}, audio = {...} }.
+--- Returns nil if the payload has no parseable cameras block (#28, #29).
+function parseDetectionLabels(payload)
+    if type(payload) ~= "string" or payload == "" then return nil end
+
+    local camerasBlock = payload:match('"cameras"%s*:%s*(%b{})')
+    if not camerasBlock then return nil end
+
+    local objSet, audSet, perCamera = {}, {}, {}
+
+    for camName, camBody in camerasBlock:gmatch('"([%w_%-]+)"%s*:%s*(%b{})') do
+        local objBlock = camBody:match('"objects"%s*:%s*(%b{})')
+        local audBlock = camBody:match('"audio"%s*:%s*(%b{})')
+        local objs = objBlock and jsonStringArray(objBlock, "track") or {}
+        local auds = audBlock and jsonStringArray(audBlock, "listen") or {}
+
+        for _, l in ipairs(objs) do objSet[l] = true end
+        for _, l in ipairs(auds) do audSet[l] = true end
+        perCamera[camName] = { objects = objs, audio = auds }
+    end
+
+    local function sortedKeys(set)
+        local out = {}
+        for k in pairs(set) do out[#out + 1] = k end
+        table.sort(out)
+        return out
+    end
+
+    for _, info in pairs(perCamera) do
+        table.sort(info.objects)
+        table.sort(info.audio)
+    end
+
+    return sortedKeys(objSet), sortedKeys(audSet), perCamera
+end
+
 ------------------------------------------------------------------------
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------
 
--- Frigate audio-detection types. Anything outside this set on frigate/<cam>/audio/<type>
--- is telemetry (rms, dBFS, future additions) and must be ignored.
-AUDIO_DETECTION_TYPES = {
-    speech=true, bark=true, scream=true, yell=true, fire_alarm=true,
-    glass_breaking=true, siren=true, car_horn=true, music=true,
-}
+-- Audio telemetry that must never be subscribed to: Frigate publishes these
+-- ~1/second per camera and they would flood Last Event (issue #23).
+local AUDIO_TELEMETRY = { rms = true, dBFS = true, state = true }
 
---- Subscribe to all Frigate MQTT topics.
-local function subscribeFrigateTopics()
-    if not mqttClient then return end
+-- Fallback label sets, used when the Frigate config cannot be read. This is
+-- the widest safe set for that failure case — we have no idea what the
+-- system actually detects, so err toward over-subscribing rather than
+-- silently dropping detections (the bug this change exists to fix). Do not
+-- narrow these; they mirror the canonical labels the camera driver maps.
+-- The four legacy labels (glass_breaking, siren, car_horn, music) are
+-- deliberately excluded — Frigate's /api/labels shows it has never emitted
+-- them.
+local FALLBACK_OBJECT_LABELS = { "person", "car", "dog", "cat", "package" }
+local FALLBACK_AUDIO_LABELS  = { "speech", "bark", "scream", "yell", "fire_alarm",
+                                 "glass", "shatter", "car_alarm" }
 
+--- Test accessor: expose the fallback label sets without making them global state.
+function getFallbackLabels()
+    return FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS
+end
+
+RESOLVED_OBJECT_LABELS = FALLBACK_OBJECT_LABELS
+RESOLVED_AUDIO_LABELS  = FALLBACK_AUDIO_LABELS
+
+-- Derived from RESOLVED_AUDIO_LABELS by setResolvedLabels(); never edited
+-- directly, so it cannot drift from the subscription list.
+AUDIO_DETECTION_TYPES = {}
+
+-- Forward declaration — subscribeFrigateTopics is defined later in this
+-- file (it needs mqttClient, which is declared even earlier), but
+-- setResolvedLabels below must call it to re-subscribe when the resolved
+-- label set changes after MQTT is already connected. Without this, a
+-- Discover Cameras that picks up a new label never reaches the broker
+-- subscription list until an unrelated MQTT reconnect (final-fix Finding A).
+local subscribeFrigateTopics
+
+--- Join a label list into a sorted, comma-joined string for cheap
+--- before/after comparison — good enough to detect "did the resolved set
+--- actually change" without needing a deep table diff.
+local function sortedJoin(list)
+    local copy = {}
+    for i, v in ipairs(list) do copy[i] = v end
+    table.sort(copy)
+    return table.concat(copy, ",")
+end
+
+--- Assign the resolved label sets and rebuild the derived whitelist.
+--- Re-subscribes to MQTT when the resolved set actually changed and a
+--- connected client exists, so the broker subscription list can never drift
+--- from the whitelist this function also maintains (final-fix Finding A).
+function setResolvedLabels(objectLabels, audioLabels)
+    local prevObj, prevAud = RESOLVED_OBJECT_LABELS, RESOLVED_AUDIO_LABELS
+    if objectLabels and #objectLabels > 0 then RESOLVED_OBJECT_LABELS = objectLabels end
+    if audioLabels  and #audioLabels  > 0 then RESOLVED_AUDIO_LABELS  = audioLabels  end
+    AUDIO_DETECTION_TYPES = {}
+    for _, l in ipairs(RESOLVED_AUDIO_LABELS) do
+        if not AUDIO_TELEMETRY[l] then AUDIO_DETECTION_TYPES[l] = true end
+    end
+
+    local changed = sortedJoin(RESOLVED_OBJECT_LABELS) ~= sortedJoin(prevObj)
+        or sortedJoin(RESOLVED_AUDIO_LABELS) ~= sortedJoin(prevAud)
+
+    if changed and mqttClient and mqttConnected then
+        subscribeFrigateTopics()
+    end
+end
+setResolvedLabels(FALLBACK_OBJECT_LABELS, FALLBACK_AUDIO_LABELS)
+
+-- Per-camera resolved labels, populated during discovery. Keyed by camera name.
+RESOLVED_PER_CAMERA = {}
+
+--- Build the full MQTT topic list for the given resolved labels.
+function buildSubscriptionTopics(objectLabels, audioLabels)
     local topics = {
         "frigate/available",
         "frigate/events",
-        -- Per-camera object counts
-        "frigate/+/person",
-        "frigate/+/car",
-        "frigate/+/dog",
-        "frigate/+/cat",
         "frigate/+/motion",
-        -- Zone events: frigate/<camera>/<zone>/<object>
-        "frigate/+/+/person",
-        "frigate/+/+/car",
-        "frigate/+/+/dog",
-        "frigate/+/+/cat",
-        -- Audio detection events (whitelist — excludes rms/dBFS telemetry that would flood Last Event)
-        "frigate/+/audio/speech",
-        "frigate/+/audio/bark",
-        "frigate/+/audio/scream",
-        "frigate/+/audio/yell",
-        "frigate/+/audio/fire_alarm",
-        "frigate/+/audio/glass_breaking",
-        "frigate/+/audio/siren",
-        "frigate/+/audio/car_horn",
-        "frigate/+/audio/music",
         "frigate/+/detect/state",
         "frigate/+/recordings/state",
     }
+    for _, l in ipairs(objectLabels or {}) do
+        topics[#topics + 1] = "frigate/+/" .. l          -- object counts
+        topics[#topics + 1] = "frigate/+/+/" .. l        -- zone counts
+    end
+    for _, l in ipairs(audioLabels or {}) do
+        if not AUDIO_TELEMETRY[l] then
+            topics[#topics + 1] = "frigate/+/audio/" .. l
+        end
+    end
+    return topics
+end
+
+--- Subscribe to all Frigate MQTT topics.
+function subscribeFrigateTopics()
+    if not mqttClient then return end
+
+    local topics = buildSubscriptionTopics(RESOLVED_OBJECT_LABELS, RESOLVED_AUDIO_LABELS)
 
     for _, topic in ipairs(topics) do
         mqttClient:Subscribe(topic, 1)
@@ -312,6 +418,8 @@ local function subscribeFrigateTopics()
     end
 
     log(LOG_INFO, "Subscribed to all Frigate MQTT topics")
+    log(LOG_INFO, "Subscribed to objects: " .. table.concat(RESOLVED_OBJECT_LABELS, ", ")
+        .. " | audio: " .. table.concat(RESOLVED_AUDIO_LABELS, ", "))
 end
 
 --- Parse MQTT topic into segments.
@@ -440,7 +548,11 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     -- frigate/<camera>/<object>
     if #segments == 3 then
         local objType = segments[3]
-        if objType == "person" or objType == "car" or objType == "dog" or objType == "cat" then
+        local tracked = false
+        for _, l in ipairs(RESOLVED_OBJECT_LABELS) do
+            if l == objType then tracked = true break end
+        end
+        if tracked then
             local count = tonumber(payload) or 0
             local key = camName .. "/" .. objType
             local prevCount = prevCounts[key] or 0
@@ -467,7 +579,11 @@ local function onMQTTMessage(obj, msgId, topic, payload, qos, retain)
     if #segments == 4 then
         local zone = segments[3]
         local objType = segments[4]
-        if objType == "person" or objType == "car" or objType == "dog" or objType == "cat" then
+        local tracked = false
+        for _, l in ipairs(RESOLVED_OBJECT_LABELS) do
+            if l == objType then tracked = true break end
+        end
+        if tracked then
             local count = tonumber(payload) or 0
             local zoneKey = camName .. "/" .. zone .. "/" .. objType
             local prevCount = prevCounts[zoneKey] or 0
@@ -592,6 +708,15 @@ local function fetchCameras(callback)
             setStatus("API Error: " .. ((strError and strError ~= "") and strError or ("HTTP " .. tostring(responseCode))))
             if callback then callback(false, {}) end
             return
+        end
+
+        local objU, audU, perCam = parseDetectionLabels(strData)
+        if objU then
+            setResolvedLabels(objU, audU)
+            RESOLVED_PER_CAMERA = perCam or {}
+        else
+            log(LOG_WARNING, "Could not read detection labels from Frigate config — "
+                .. "falling back to the built-in label list; some detections may not reach Control4")
         end
 
         local cameraNames = {}
@@ -753,6 +878,25 @@ local function adoptOrphanCameras()
     end
 end
 
+--- Send configuration to a camera driver, including that camera's own
+--- detection labels. SendToDevice serialises params as strings, so the
+--- label lists cross as comma-separated strings, not tables.
+--- useSub, if given, overrides the global "Use Sub Streams" property (the
+--- discovery loop auto-detects per camera whether a sub-stream exists).
+local function sendCameraConfig(camName, devId, useSub)
+    local info = RESOLVED_PER_CAMERA[camName] or { objects = {}, audio = {} }
+    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
+        host           = Properties[PROP_HOST] or "",
+        camera_name    = camName,
+        use_sub_stream = useSub or Properties[PROP_SUB] or "Yes",
+        object_labels  = table.concat(info.objects or {}, ","),
+        audio_labels   = table.concat(info.audio   or {}, ","),
+    })
+end
+
+--- Test accessor.
+function sendCameraConfigForTest(camName, devId, useSub) return sendCameraConfig(camName, devId, useSub) end
+
 --- Handle ADOPT_RESPONSE from a camera identifying itself.
 local function handleAdoptResponse(tParams)
     local camName = tParams and tParams.camera_name or ""
@@ -776,13 +920,7 @@ local function handleAdoptResponse(tParams)
     saveManagedCameras(managed)
 
     -- Send current config to the adopted camera
-    local host = Properties[PROP_HOST] or ""
-    local useSub = Properties[PROP_SUB] or "Yes"
-    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
-        host = host,
-        camera_name = camName,
-        use_sub_stream = useSub
-    })
+    sendCameraConfig(camName, devId)
 
     log(LOG_INFO, "Adopted orphan camera: " .. camName .. " (device " .. devId .. ")")
 end
@@ -804,7 +942,6 @@ local function discoverCameras()
 
         hasSubStream = hasSubStream or {}
         local managed = getManagedCameras()
-        local host = Properties[PROP_HOST] or ""
         local globalUseSub = Properties[PROP_SUB] or "Yes"
         local added = 0
         local skipped = 0
@@ -820,11 +957,7 @@ local function discoverCameras()
             if managed[camName] then
                 local devId = managed[camName].deviceId
                 if devId and devId > 0 then
-                    C4:SendToDevice(devId, "SET_FRIGATE_CONFIG", {
-                        host = host,
-                        camera_name = camName,
-                        use_sub_stream = useSub
-                    })
+                    sendCameraConfig(camName, devId, useSub)
                 end
                 skipped = skipped + 1
             else
@@ -852,11 +985,7 @@ local function discoverCameras()
 
                     saveManagedCameras(managed)
 
-                    C4:SendToDevice(deviceId, "SET_FRIGATE_CONFIG", {
-                        host = host,
-                        camera_name = camName,
-                        use_sub_stream = useSub
-                    })
+                    sendCameraConfig(camName, deviceId, useSub)
 
                     log(LOG_INFO, "Added camera: " .. camName .. " (device " .. deviceId .. ")")
                 end)
@@ -1383,4 +1512,9 @@ function OnDriverDestroyed()
         C4:KillTimer(UPDATE_CHECK_TIMER)
         UPDATE_CHECK_TIMER = nil
     end
+end
+
+--- Test accessor: route a raw MQTT message the way the broker callback does.
+function handleMQTTForTest(topic, payload)
+    return onMQTTMessage(nil, 0, topic, payload, 1, false)
 end

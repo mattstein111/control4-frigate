@@ -116,9 +116,11 @@ local VAR = {
     YELL_LAST_HEARD           = "YELL_LAST_HEARD",
     FIRE_ALARM_LAST_HEARD     = "FIRE_ALARM_LAST_HEARD",
     GLASS_BREAKING_LAST_HEARD = "GLASS_BREAKING_LAST_HEARD",
-    SIREN_LAST_HEARD          = "SIREN_LAST_HEARD",
-    CAR_HORN_LAST_HEARD       = "CAR_HORN_LAST_HEARD",
-    MUSIC_LAST_HEARD          = "MUSIC_LAST_HEARD",
+    CAR_ALARM_LAST_HEARD      = "CAR_ALARM_LAST_HEARD",
+
+    -- Package (persistent, so boolean + last-seen like other objects)
+    PACKAGE_DETECTED  = "PACKAGE_DETECTED",
+    PACKAGE_LAST_SEEN = "PACKAGE_LAST_SEEN",
 }
 
 -- Last Frigate event seen for this camera, used to attach that event's
@@ -214,9 +216,11 @@ local function initVariables()
     C4:AddVariable(VAR.YELL_LAST_HEARD,           "", "STRING")
     C4:AddVariable(VAR.FIRE_ALARM_LAST_HEARD,     "", "STRING")
     C4:AddVariable(VAR.GLASS_BREAKING_LAST_HEARD, "", "STRING")
-    C4:AddVariable(VAR.SIREN_LAST_HEARD,          "", "STRING")
-    C4:AddVariable(VAR.CAR_HORN_LAST_HEARD,       "", "STRING")
-    C4:AddVariable(VAR.MUSIC_LAST_HEARD,          "", "STRING")
+    C4:AddVariable(VAR.CAR_ALARM_LAST_HEARD,      "", "STRING")
+
+    -- Package
+    C4:AddVariable(VAR.PACKAGE_DETECTED,  "false", "BOOL")
+    C4:AddVariable(VAR.PACKAGE_LAST_SEEN, "", "STRING")
 end
 
 --- Update a driver variable by name. Never let a bad variable name abort
@@ -332,14 +336,17 @@ local EVENT_IDS = {
     ["Audio: Yell"]          = 19,
     ["Audio: Fire Alarm"]    = 20,
     ["Audio: Glass Breaking"] = 21,
-    ["Audio: Siren"]         = 22,
-    ["Audio: Car Horn"]      = 23,
-    ["Audio: Music"]         = 24,
+    -- 22-24 vacant: Audio: Siren / Car Horn / Music removed (#28, #29) —
+    -- Frigate has never emitted these labels. Ids left unassigned rather
+    -- than reused so no existing event identity moves.
     ["Audio Detected"]       = 25,
     ["Detection Enabled"]    = 26,
     ["Detection Disabled"]   = 27,
     ["Recording Enabled"]    = 28,
     ["Recording Disabled"]   = 29,
+    ["Package Detected"]     = 30,
+    ["Package Left"]         = 31,
+    ["Audio: Car Alarm"]     = 32,
 }
 
 --- Fire a named event declared in driver.xml <events>.
@@ -413,14 +420,26 @@ local function handleDetection(tParams)
             fireEvent("Object Left")
             recordHistory(friendly .. " left", "Info", friendly .. " Left")
         end
-    else
-        -- Generic object
+    elseif objType == "package" then
+        setVar(VAR.PACKAGE_DETECTED, count > 0 and "true" or "false")
+        if count > 0 then setVar(VAR.PACKAGE_LAST_SEEN, ts) end
         if count > 0 and eventType == "new" then
+            fireEvent("Package Detected")
             fireEvent("Object Detected")
             recordHistory(friendly .. " detected", "Info", friendly .. " Detected")
         elseif count == 0 then
+            fireEvent("Package Left")
             fireEvent("Object Left")
             recordHistory(friendly .. " left", "Info", friendly .. " Left")
+        end
+    else
+        local info = labelInfo(objType, "object")
+        if count > 0 and eventType == "new" then
+            fireEvent("Object Detected")
+            recordHistory(info.detected, "Info", info.detected)
+        elseif count == 0 then
+            fireEvent("Object Left")
+            recordHistory(info.left, "Info", info.left)
         end
     end
 
@@ -505,50 +524,73 @@ end
 -- Audio Detection Handler
 ------------------------------------------------------------------------
 
---- Map Frigate audio type names to event names.
-local AUDIO_EVENTS = {
-    speech         = "Audio: Speech",
-    bark           = "Audio: Bark",
-    scream         = "Audio: Scream",
-    yell           = "Audio: Yell",
-    fire_alarm     = "Audio: Fire Alarm",
-    glass_breaking = "Audio: Glass Breaking",
-    siren          = "Audio: Siren",
-    car_horn       = "Audio: Car Horn",
-    music          = "Audio: Music",
+--- Title-case a Frigate label: "fire_hydrant" -> "Fire Hydrant".
+function friendlyLabel(label)
+    if not label or label == "" then return "Object" end
+    local words = {}
+    for w in tostring(label):gmatch("[^_%s]+") do
+        words[#words + 1] = w:sub(1, 1):upper() .. w:sub(2)
+    end
+    return table.concat(words, " ")
+end
+
+--- Canonical mapping from Frigate label to friendly name, event and variable.
+--- This is the ONLY source for the fired event, the recorded history type and
+--- the registration, so those three cannot disagree (#28, #29).
+OBJECT_LABELS = {
+    person  = { friendly = "Person",  detected = "Person Detected",  left = "Person Left",
+                var_bool = "PERSON_DETECTED",  var_seen = "PERSON_LAST_SEEN",  var_count = "PERSON_COUNT" },
+    car     = { friendly = "Car",     detected = "Car Detected",     left = "Car Left",
+                var_bool = "CAR_DETECTED",     var_seen = "CAR_LAST_SEEN",     var_count = "CAR_COUNT" },
+    dog     = { friendly = "Dog",     detected = "Dog Detected",     left = "Object Left",
+                var_bool = "DOG_DETECTED",     var_seen = "DOG_LAST_SEEN" },
+    cat     = { friendly = "Cat",     detected = "Cat Detected",     left = "Object Left",
+                var_bool = "CAT_DETECTED",     var_seen = "CAT_LAST_SEEN" },
+    package = { friendly = "Package", detected = "Package Detected", left = "Package Left",
+                var_bool = "PACKAGE_DETECTED", var_seen = "PACKAGE_LAST_SEEN" },
 }
+
+AUDIO_LABELS = {
+    speech     = { friendly = "Speech",         event = "Audio: Speech",         var = "SPEECH_LAST_HEARD" },
+    bark       = { friendly = "Bark",           event = "Audio: Bark",           var = "BARK_LAST_HEARD" },
+    scream     = { friendly = "Scream",         event = "Audio: Scream",         var = "SCREAM_LAST_HEARD" },
+    yell       = { friendly = "Yell",           event = "Audio: Yell",           var = "YELL_LAST_HEARD" },
+    fire_alarm = { friendly = "Fire Alarm",     event = "Audio: Fire Alarm",     var = "FIRE_ALARM_LAST_HEARD" },
+    glass      = { friendly = "Glass Breaking", event = "Audio: Glass Breaking", var = "GLASS_BREAKING_LAST_HEARD" },
+    shatter    = { friendly = "Glass Breaking", event = "Audio: Glass Breaking", var = "GLASS_BREAKING_LAST_HEARD" },
+    car_alarm  = { friendly = "Car Alarm",      event = "Audio: Car Alarm",      var = "CAR_ALARM_LAST_HEARD" },
+}
+
+--- Look up a label. Never returns nil: unmapped labels get a generated entry
+--- routed to the generic event, so a detection is never silently dropped.
+function labelInfo(label, kind)
+    if kind == "audio" then
+        local e = AUDIO_LABELS[label]
+        if e then return e end
+        return { friendly = friendlyLabel(label), event = "Audio Detected" }
+    end
+    local e = OBJECT_LABELS[label]
+    if e then return e end
+    local f = friendlyLabel(label)
+    return { friendly = f, detected = f .. " Detected", left = f .. " Left" }
+end
 
 --- Handle audio detection from Frigate.
 --- tParams: { audio_type="speech" }
 local function handleAudio(tParams)
     local audioType = tParams.audio_type or "unknown"
-    local friendly = friendlyObject(audioType:gsub("_", " "))
+    local info = labelInfo(audioType, "audio")
     local ts = timestamp()
 
-    -- Update last-heard timestamps
     setVar(VAR.AUDIO_LAST_HEARD, ts)
-    local AUDIO_LAST_HEARD_VARS = {
-        speech         = VAR.SPEECH_LAST_HEARD,
-        bark           = VAR.BARK_LAST_HEARD,
-        scream         = VAR.SCREAM_LAST_HEARD,
-        yell           = VAR.YELL_LAST_HEARD,
-        fire_alarm     = VAR.FIRE_ALARM_LAST_HEARD,
-        glass_breaking = VAR.GLASS_BREAKING_LAST_HEARD,
-        siren          = VAR.SIREN_LAST_HEARD,
-        car_horn       = VAR.CAR_HORN_LAST_HEARD,
-        music          = VAR.MUSIC_LAST_HEARD,
-    }
-    if AUDIO_LAST_HEARD_VARS[audioType] then
-        setVar(AUDIO_LAST_HEARD_VARS[audioType], ts)
-    end
+    if info.var and VAR[info.var] then setVar(VAR[info.var], ts) end
 
-    local eventName = AUDIO_EVENTS[audioType]
-    if eventName then
-        fireEvent(eventName)
-    end
+    if info.event ~= "Audio Detected" then fireEvent(info.event) end
     fireEvent("Audio Detected")
-    recordHistory("Audio: " .. friendly, "Info", "Audio: " .. friendly)
-    C4:UpdateProperty(PROP_LAST_EVENT, "Audio: " .. friendly .. " — " .. ts)
+
+    local label = "Audio: " .. info.friendly
+    recordHistory(label, "Info", label)
+    C4:UpdateProperty(PROP_LAST_EVENT, label .. " — " .. ts)
 end
 
 ------------------------------------------------------------------------
@@ -615,8 +657,13 @@ function GetNotificationAttachmentURL(idBinding, tParams)
     return url
 end
 
---- Register detection events with the History Agent for push notifications.
-local function registerNotificationEvents()
+--- Register the history event types this camera can emit.
+--- Called with no arguments at init (static set only); called again with the
+--- camera's own labels when the NVR sends them, so registration matches what
+--- this specific camera can actually produce (#28, #29).
+--- The complete set is always sent in ONE call, which is correct whether
+--- C4:RegisterEvents replaces or accumulates.
+local function registerNotificationEvents(objectLabels, audioLabels)
     local proxyDevices = C4:GetProxyDevices()
     if type(proxyDevices) ~= "table" then
         log(LOG_WARNING, "RegisterEvents skipped — GetProxyDevices returned no table; "
@@ -637,27 +684,51 @@ local function registerNotificationEvents()
 
     -- Every event type passed to recordHistory() must be registered here, or
     -- Navigator has no registration to match the stored record against.
-    local types = {
-        -- Object detection
-        "Person Detected", "Person Left",
-        "Car Detected",    "Car Left",
-        "Dog Detected",    "Dog Left",
-        "Cat Detected",    "Cat Left",
-        "Object Detected", "Object Left",
-        -- Motion / zones / loitering
-        "Motion Detected", "Motion Stopped",
-        "Zone Entered",    "Zone Exited",
-        "Loitering Detected",
-        -- Health
-        "Camera Online",   "Camera Offline",
-        -- Audio detection
-        "Audio: Speech", "Audio: Bark", "Audio: Scream", "Audio: Yell",
-        "Audio: Fire Alarm", "Audio: Glass Breaking", "Audio: Siren",
-        "Audio: Car Horn", "Audio: Music",
-        -- State changes
-        "Detection Enabled", "Detection Disabled",
-        "Recording Enabled", "Recording Disabled",
-    }
+    local seen, types = {}, {}
+    local function addType(t)
+        if t and t ~= "" and not seen[t] then seen[t] = true; types[#types + 1] = t end
+    end
+
+    -- Static types, always registered.
+    addType("Object Detected")   addType("Object Left")
+    addType("Motion Detected")   addType("Motion Stopped")
+    addType("Zone Entered")      addType("Zone Exited")
+    addType("Loitering Detected")
+    addType("Camera Online")     addType("Camera Offline")
+    addType("Audio Detected")
+    addType("Detection Enabled")  addType("Detection Disabled")
+    addType("Recording Enabled")  addType("Recording Disabled")
+
+    -- This camera's own labels. An empty or absent list means "unknown" —
+    -- Frigate was unreachable, or this camera isn't in Frigate's config yet —
+    -- not "this camera detects nothing". Register the full canonical set in
+    -- that case, mirroring the NVR side's "widest safe set on failure"
+    -- fallback; a camera in this state still receives detections through the
+    -- NVR's wildcard MQTT subscriptions, and under-registering means those
+    -- get recorded but never rendered in the Control4 app (final-fix Finding
+    -- B). When real labels are supplied, keep the precise per-camera set.
+    if objectLabels and #objectLabels > 0 then
+        for _, l in ipairs(objectLabels) do
+            local info = labelInfo(l, "object")
+            addType(info.detected)
+            addType(info.left)
+        end
+    else
+        for _, info in pairs(OBJECT_LABELS) do
+            addType(info.detected)
+            addType(info.left)
+        end
+    end
+    if audioLabels and #audioLabels > 0 then
+        for _, l in ipairs(audioLabels) do
+            local info = labelInfo(l, "audio")
+            addType("Audio: " .. info.friendly)
+        end
+    else
+        for _, info in pairs(AUDIO_LABELS) do
+            addType("Audio: " .. info.friendly)
+        end
+    end
 
     local typeList = ""
     for _, t in ipairs(types) do
@@ -833,6 +904,17 @@ function ExecuteCommand(sCommand, tParams)
                 C4:UpdateProperty(PROP_SUB_STREAM, tParams.use_sub_stream)
             end
             updateProxy()
+
+            local function splitLabels(s)
+                local out = {}
+                for v in tostring(s or ""):gmatch("[^,]+") do out[#out + 1] = v end
+                return out
+            end
+            local objL = splitLabels(tParams.object_labels)
+            local audL = splitLabels(tParams.audio_labels)
+            log(LOG_DEBUG, "Labels for this camera — objects: " .. tostring(tParams.object_labels)
+                .. " | audio: " .. tostring(tParams.audio_labels))
+            registerNotificationEvents(objL, audL)
         end
     elseif sCommand == "FRIGATE_DETECTION" then
         handleDetection(tParams or {})
