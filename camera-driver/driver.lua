@@ -657,8 +657,13 @@ function GetNotificationAttachmentURL(idBinding, tParams)
     return url
 end
 
---- Register detection events with the History Agent for push notifications.
-local function registerNotificationEvents()
+--- Register the history event types this camera can emit.
+--- Called with no arguments at init (static set only); called again with the
+--- camera's own labels when the NVR sends them, so registration matches what
+--- this specific camera can actually produce (#28, #29).
+--- The complete set is always sent in ONE call, which is correct whether
+--- C4:RegisterEvents replaces or accumulates.
+local function registerNotificationEvents(objectLabels, audioLabels)
     local proxyDevices = C4:GetProxyDevices()
     if type(proxyDevices) ~= "table" then
         log(LOG_WARNING, "RegisterEvents skipped — GetProxyDevices returned no table; "
@@ -679,27 +684,31 @@ local function registerNotificationEvents()
 
     -- Every event type passed to recordHistory() must be registered here, or
     -- Navigator has no registration to match the stored record against.
-    local types = {
-        -- Object detection
-        "Person Detected", "Person Left",
-        "Car Detected",    "Car Left",
-        "Dog Detected",    "Dog Left",
-        "Cat Detected",    "Cat Left",
-        "Object Detected", "Object Left",
-        "Package Detected", "Package Left",
-        -- Motion / zones / loitering
-        "Motion Detected", "Motion Stopped",
-        "Zone Entered",    "Zone Exited",
-        "Loitering Detected",
-        -- Health
-        "Camera Online",   "Camera Offline",
-        -- Audio detection
-        "Audio: Speech", "Audio: Bark", "Audio: Scream", "Audio: Yell",
-        "Audio: Fire Alarm", "Audio: Glass Breaking", "Audio: Car Alarm",
-        -- State changes
-        "Detection Enabled", "Detection Disabled",
-        "Recording Enabled", "Recording Disabled",
-    }
+    local seen, types = {}, {}
+    local function addType(t)
+        if t and t ~= "" and not seen[t] then seen[t] = true; types[#types + 1] = t end
+    end
+
+    -- Static types, always registered.
+    addType("Object Detected")   addType("Object Left")
+    addType("Motion Detected")   addType("Motion Stopped")
+    addType("Zone Entered")      addType("Zone Exited")
+    addType("Loitering Detected")
+    addType("Camera Online")     addType("Camera Offline")
+    addType("Audio Detected")
+    addType("Detection Enabled")  addType("Detection Disabled")
+    addType("Recording Enabled")  addType("Recording Disabled")
+
+    -- This camera's own labels.
+    for _, l in ipairs(objectLabels or {}) do
+        local info = labelInfo(l, "object")
+        addType(info.detected)
+        addType(info.left)
+    end
+    for _, l in ipairs(audioLabels or {}) do
+        local info = labelInfo(l, "audio")
+        addType("Audio: " .. info.friendly)
+    end
 
     local typeList = ""
     for _, t in ipairs(types) do
@@ -875,6 +884,17 @@ function ExecuteCommand(sCommand, tParams)
                 C4:UpdateProperty(PROP_SUB_STREAM, tParams.use_sub_stream)
             end
             updateProxy()
+
+            local function splitLabels(s)
+                local out = {}
+                for v in tostring(s or ""):gmatch("[^,]+") do out[#out + 1] = v end
+                return out
+            end
+            local objL = splitLabels(tParams.object_labels)
+            local audL = splitLabels(tParams.audio_labels)
+            log(LOG_DEBUG, "Labels for this camera — objects: " .. tostring(tParams.object_labels)
+                .. " | audio: " .. tostring(tParams.audio_labels))
+            registerNotificationEvents(objL, audL)
         end
     elseif sCommand == "FRIGATE_DETECTION" then
         handleDetection(tParams or {})

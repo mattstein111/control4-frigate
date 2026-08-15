@@ -80,6 +80,16 @@ function check(desc, ok, detail)
     if not ok then failures = failures + 1 end
 end
 
+-- In production the NVR driver pushes SET_FRIGATE_CONFIG (and this camera's
+-- labels) as soon as it pairs — before Frigate can emit any detection event
+-- for it. Registration is now per-camera (#28, #29), so simulate that same
+-- ordering here; otherwise the checks below would be asserting registration
+-- of types this camera was never told it has.
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = Properties["Frigate Host"], camera_name = Properties["Camera Name"], use_sub_stream = "Yes",
+    object_labels = "person", audio_labels = "fire_alarm",
+})
+
 ------------------------------------------------------------------------
 -- Person detected: variables, events, history, Last Event
 ------------------------------------------------------------------------
@@ -321,6 +331,41 @@ check("Audio: Music is no longer registered", registeredTypes["Audio: Music"] ==
 -- registered" assertions stay valid; the assertions above deliberately check
 -- the recorded type string rather than its registration, so they survive
 -- that change. Do not convert them to registeredTypes lookups.
+
+------------------------------------------------------------------------
+-- Per-camera history registration (#28, #29)
+------------------------------------------------------------------------
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "front_door", use_sub_stream = "Yes",
+    object_labels = "package,person", audio_labels = "bark,glass",
+})
+
+check("registers the camera's object labels",
+      registeredTypes["Package Detected"] == true and registeredTypes["Person Detected"] == true)
+check("registers the camera's audio labels",
+      registeredTypes["Audio: Bark"] == true and registeredTypes["Audio: Glass Breaking"] == true)
+check("does not register labels this camera lacks", registeredTypes["Car Detected"] == nil)
+check("still registers static types",
+      registeredTypes["Motion Detected"] == true and registeredTypes["Camera Offline"] == true)
+check("registration category is unchanged", registeredCategory == "Cameras", registeredCategory)
+check("registration subcategory is unchanged", registeredSubcategory == "Frigate", registeredSubcategory)
+
+-- Empty label lists must not wipe the static registration.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "bbq", use_sub_stream = "Yes",
+    object_labels = "", audio_labels = "",
+})
+check("empty labels still register the static set", registeredTypes["Motion Detected"] == true)
+
+-- An unmapped label registers its generated type, so its history can render.
+registeredTypes = {}
+pcall(ExecuteCommand, "SET_FRIGATE_CONFIG", {
+    host = "192.168.1.50", camera_name = "yard", use_sub_stream = "Yes",
+    object_labels = "bicycle", audio_labels = "",
+})
+check("unmapped label's generated type is registered", registeredTypes["Bicycle Detected"] == true)
 
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
