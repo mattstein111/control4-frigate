@@ -263,6 +263,53 @@ local function jsonAfterObject(json)
     return json:match('"after"%s*:%s*(%b{})')
 end
 
+--- Extract a JSON string array like "listen":["a","b"] into a Lua array.
+local function jsonStringArray(json, key)
+    local body = json:match('"' .. key .. '"%s*:%s*%[([^%]]*)%]')
+    if not body then return nil end
+    local out = {}
+    for v in body:gmatch('"([^"]+)"') do out[#out + 1] = v end
+    return out
+end
+
+--- Parse the detection labels Frigate is configured to produce.
+--- Returns objectUnion, audioUnion, perCamera — unions are sorted arrays;
+--- perCamera maps camera name to { objects = {...}, audio = {...} }.
+--- Returns nil if the payload has no parseable cameras block (#28, #29).
+function parseDetectionLabels(payload)
+    if type(payload) ~= "string" or payload == "" then return nil end
+
+    local camerasBlock = payload:match('"cameras"%s*:%s*(%b{})')
+    if not camerasBlock then return nil end
+
+    local objSet, audSet, perCamera = {}, {}, {}
+
+    for camName, camBody in camerasBlock:gmatch('"([%w_%-]+)"%s*:%s*(%b{})') do
+        local objBlock = camBody:match('"objects"%s*:%s*(%b{})')
+        local audBlock = camBody:match('"audio"%s*:%s*(%b{})')
+        local objs = objBlock and jsonStringArray(objBlock, "track") or {}
+        local auds = audBlock and jsonStringArray(audBlock, "listen") or {}
+
+        for _, l in ipairs(objs) do objSet[l] = true end
+        for _, l in ipairs(auds) do audSet[l] = true end
+        perCamera[camName] = { objects = objs, audio = auds }
+    end
+
+    local function sortedKeys(set)
+        local out = {}
+        for k in pairs(set) do out[#out + 1] = k end
+        table.sort(out)
+        return out
+    end
+
+    for _, info in pairs(perCamera) do
+        table.sort(info.objects)
+        table.sort(info.audio)
+    end
+
+    return sortedKeys(objSet), sortedKeys(audSet), perCamera
+end
+
 ------------------------------------------------------------------------
 -- MQTT Client (C4:MQTT API — OS 3.3+)
 ------------------------------------------------------------------------

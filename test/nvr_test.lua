@@ -151,5 +151,45 @@ check("loitering still detected", loiter ~= nil)
 check("loitering zone forwarded", loiter and loiter.params.zone == "driveway",
       loiter and loiter.params.zone)
 
+------------------------------------------------------------------------
+-- Label parsing from Frigate config (#28, #29)
+------------------------------------------------------------------------
+local CFG = [[
+{"objects":{"track":["person"]},
+ "audio":{"enabled":true,"listen":["bark","speech"]},
+ "cameras":{
+   "bbq":{"objects":{"track":["person"]},"audio":{"enabled":true,"listen":["bark","speech"]}},
+   "front_door":{"objects":{"track":["person","package"]},"audio":{"enabled":true,"listen":["bark","speech","glass"]}},
+   "gate":{"objects":{"track":["person","car"]},"audio":{"enabled":true,"listen":["bark","speech"]}}}}
+]]
+
+local function joined(t) return table.concat(t, ",") end
+
+local objU, audU, perCam = parseDetectionLabels(CFG)
+check("parseDetectionLabels returns a result", objU ~= nil)
+check("object union spans all cameras", joined(objU) == "car,package,person", objU and joined(objU))
+check("audio union spans all cameras", joined(audU) == "bark,glass,speech", audU and joined(audU))
+check("per-camera objects for front_door",
+      perCam and joined(perCam.front_door.objects) == "package,person",
+      perCam and perCam.front_door and joined(perCam.front_door.objects))
+check("per-camera audio for bbq excludes glass",
+      perCam and joined(perCam.bbq.audio) == "bark,speech",
+      perCam and perCam.bbq and joined(perCam.bbq.audio))
+
+-- A camera with no audio block still contributes its objects.
+local CFG2 = [[
+{"objects":{"track":["person"]},"audio":{"listen":["bark"]},
+ "cameras":{"cam1":{"objects":{"track":["person","dog"]}}}}
+]]
+local o2, a2, p2 = parseDetectionLabels(CFG2)
+check("camera without audio block still parses", o2 ~= nil)
+check("its objects are included", o2 and joined(o2) == "dog,person", o2 and joined(o2))
+
+-- Malformed and empty payloads return nil rather than raising.
+local ok3 = pcall(parseDetectionLabels, "not json")
+check("malformed payload does not raise", ok3)
+check("malformed payload returns nil", select(1, parseDetectionLabels("not json")) == nil)
+check("empty payload returns nil", select(1, parseDetectionLabels("")) == nil)
+
 realWrite(failures == 0 and "\nALL PASS\n" or ("\n" .. failures .. " FAILURE(S)\n"))
 os.exit(failures == 0 and 0 or 1)
